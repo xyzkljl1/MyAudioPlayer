@@ -1,0 +1,8 @@
+{
+  "playLists": [
+    [ "PlayListDLSite", "Z:\\DLSite1" ],
+    [ "PlayListDLSite", "Z:\\DLSite2" ]
+
+  ],
+  "DLServerAddress": "http://127.0.0.1:4567"
+}

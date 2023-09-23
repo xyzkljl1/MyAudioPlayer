@@ -3,3 +3,7 @@
 ################################################################################
 
 /.vs/MyAudioPlayer
+/bin/Debug/net6.0-windows
+/obj
+/config.json
+*.user
