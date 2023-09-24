@@ -29,6 +29,11 @@
         private void InitializeComponent()
         {
             this.UpPanel = new System.Windows.Forms.Panel();
+            this.openWebButton = new System.Windows.Forms.Button();
+            this.openLocalButton = new System.Windows.Forms.Button();
+            this.sliderLabel = new System.Windows.Forms.Label();
+            this.volumeSlider = new System.Windows.Forms.TrackBar();
+            this.playSlider = new System.Windows.Forms.TrackBar();
             this.favButton = new System.Windows.Forms.Button();
             this.delButton = new System.Windows.Forms.Button();
             this.nextButton = new System.Windows.Forms.Button();
@@ -38,18 +43,19 @@
             this.titleBox = new System.Windows.Forms.RichTextBox();
             this.DownPanel = new System.Windows.Forms.Panel();
             this.PlayListTab = new System.Windows.Forms.TabControl();
-            this.playSlider = new System.Windows.Forms.TrackBar();
-            this.volumeSlider = new System.Windows.Forms.TrackBar();
             this.UpPanel.SuspendLayout();
-            this.DownPanel.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.playSlider)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.volumeSlider)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.playSlider)).BeginInit();
+            this.DownPanel.SuspendLayout();
             this.SuspendLayout();
             // 
             // UpPanel
             // 
             this.UpPanel.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
+            this.UpPanel.Controls.Add(this.openWebButton);
+            this.UpPanel.Controls.Add(this.openLocalButton);
+            this.UpPanel.Controls.Add(this.sliderLabel);
             this.UpPanel.Controls.Add(this.volumeSlider);
             this.UpPanel.Controls.Add(this.playSlider);
             this.UpPanel.Controls.Add(this.favButton);
@@ -64,12 +70,61 @@
             this.UpPanel.Size = new System.Drawing.Size(1286, 192);
             this.UpPanel.TabIndex = 0;
             // 
+            // openWebButton
+            // 
+            this.openWebButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.openWebButton.Location = new System.Drawing.Point(1112, 0);
+            this.openWebButton.Name = "openWebButton";
+            this.openWebButton.Size = new System.Drawing.Size(80, 60);
+            this.openWebButton.TabIndex = 11;
+            this.openWebButton.Text = "Web";
+            this.openWebButton.UseVisualStyleBackColor = true;
+            // 
+            // openLocalButton
+            // 
+            this.openLocalButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.openLocalButton.Location = new System.Drawing.Point(1198, 0);
+            this.openLocalButton.Name = "openLocalButton";
+            this.openLocalButton.Size = new System.Drawing.Size(80, 60);
+            this.openLocalButton.TabIndex = 10;
+            this.openLocalButton.Text = "Local";
+            this.openLocalButton.UseVisualStyleBackColor = true;
+            // 
+            // sliderLabel
+            // 
+            this.sliderLabel.AutoSize = true;
+            this.sliderLabel.Location = new System.Drawing.Point(1024, 132);
+            this.sliderLabel.Name = "sliderLabel";
+            this.sliderLabel.Size = new System.Drawing.Size(40, 20);
+            this.sliderLabel.TabIndex = 9;
+            this.sliderLabel.Text = "0:00";
+            // 
+            // volumeSlider
+            // 
+            this.volumeSlider.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.volumeSlider.Location = new System.Drawing.Point(1092, 64);
+            this.volumeSlider.Maximum = 100;
+            this.volumeSlider.Name = "volumeSlider";
+            this.volumeSlider.Size = new System.Drawing.Size(187, 56);
+            this.volumeSlider.TabIndex = 8;
+            // 
+            // playSlider
+            // 
+            this.playSlider.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.playSlider.Location = new System.Drawing.Point(390, 132);
+            this.playSlider.Maximum = 0;
+            this.playSlider.Name = "playSlider";
+            this.playSlider.Size = new System.Drawing.Size(628, 56);
+            this.playSlider.TabIndex = 7;
+            this.playSlider.TickFrequency = 60;
+            // 
             // favButton
             // 
             this.favButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.favButton.Location = new System.Drawing.Point(1092, 126);
+            this.favButton.Location = new System.Drawing.Point(1112, 127);
             this.favButton.Name = "favButton";
-            this.favButton.Size = new System.Drawing.Size(87, 61);
+            this.favButton.Size = new System.Drawing.Size(80, 62);
             this.favButton.TabIndex = 6;
             this.favButton.Text = "Fav";
             this.favButton.UseVisualStyleBackColor = true;
@@ -77,9 +132,9 @@
             // delButton
             // 
             this.delButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.delButton.Location = new System.Drawing.Point(1185, 126);
+            this.delButton.Location = new System.Drawing.Point(1198, 127);
             this.delButton.Name = "delButton";
-            this.delButton.Size = new System.Drawing.Size(94, 61);
+            this.delButton.Size = new System.Drawing.Size(80, 60);
             this.delButton.TabIndex = 5;
             this.delButton.Text = "Del";
             this.delButton.UseVisualStyleBackColor = true;
@@ -126,13 +181,14 @@
             // 
             // titleBox
             // 
-            this.titleBox.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            this.titleBox.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.titleBox.BorderStyle = System.Windows.Forms.BorderStyle.None;
+            this.titleBox.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             this.titleBox.Location = new System.Drawing.Point(7, 3);
             this.titleBox.Name = "titleBox";
             this.titleBox.ReadOnly = true;
-            this.titleBox.Size = new System.Drawing.Size(1272, 49);
+            this.titleBox.Size = new System.Drawing.Size(1079, 118);
             this.titleBox.TabIndex = 0;
             this.titleBox.Text = "titleBox";
             // 
@@ -158,23 +214,6 @@
             this.PlayListTab.Size = new System.Drawing.Size(1276, 673);
             this.PlayListTab.TabIndex = 0;
             // 
-            // playSlider
-            // 
-            this.playSlider.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left) 
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.playSlider.Location = new System.Drawing.Point(390, 132);
-            this.playSlider.Name = "playSlider";
-            this.playSlider.Size = new System.Drawing.Size(696, 56);
-            this.playSlider.TabIndex = 7;
-            // 
-            // volumeSlider
-            // 
-            this.volumeSlider.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.volumeSlider.Location = new System.Drawing.Point(1092, 64);
-            this.volumeSlider.Name = "volumeSlider";
-            this.volumeSlider.Size = new System.Drawing.Size(187, 56);
-            this.volumeSlider.TabIndex = 8;
-            // 
             // MainWindow
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(9F, 20F);
@@ -186,9 +225,9 @@
             this.Text = "万万静听";
             this.UpPanel.ResumeLayout(false);
             this.UpPanel.PerformLayout();
-            this.DownPanel.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.playSlider)).EndInit();
             ((System.ComponentModel.ISupportInitialize)(this.volumeSlider)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.playSlider)).EndInit();
+            this.DownPanel.ResumeLayout(false);
             this.ResumeLayout(false);
 
         }
@@ -207,5 +246,8 @@
         private Button favButton;
         private TrackBar volumeSlider;
         private TrackBar playSlider;
+        private Label sliderLabel;
+        private Button openWebButton;
+        private Button openLocalButton;
     }
 }

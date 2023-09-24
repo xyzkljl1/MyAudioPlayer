@@ -60,16 +60,22 @@ namespace MyAudioPlayer.PlayList
         private TreeView treeView=new TreeView();
         private TreeNode? mySelectedNode=null;//因为需要双击选中曲目，忽略treeView自己的selectedNode
         private DirectoryInfo rootDir;
+        private string dlServer;
+        private DirectoryInfo favDir;
         private List<Node> nodes=new List<Node>();
+        private HttpClient httpClient;       
         public PlayListDLSite(string _rootDir)
         {
             rootDir = new DirectoryInfo(_rootDir);
+            dlServer = Config.DLServerAddress;
+            favDir = new DirectoryInfo(Config.DLSiteFavDir);
             Title = "DL-"+rootDir.Name;
             LoadFiles();
             treeView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
             treeView.NodeMouseDoubleClick += this.SelectedIndexChanged;
+            httpClient = new HttpClient();
         }
         //TODO: 添加搜索栏
         public override Control GetMainControl()
@@ -219,26 +225,24 @@ namespace MyAudioPlayer.PlayList
                     nodes.Add(node);
                 }
         }
-        public void OnDelete()
-        {
-
-        }
-
         public override FileInfo? GetCurrentFile()
         {
+            if(mySelectedNode == null)
+                return null;
             //选中叶节点返回文件，选择上级时向下寻找第一个子节点
-            if (treeView.SelectedNode.Tag as AFile != null)
-                return (treeView.SelectedNode.Tag as AFile)!.fileInfo;
-            else if (treeView.SelectedNode.Tag as AFileSet != null)
+            var selectedNode = mySelectedNode!;//注意不使用treeView.SelectedNode
+            if (selectedNode.Tag as AFile != null)
+                return (selectedNode.Tag as AFile)!.fileInfo;
+            else if (selectedNode.Tag as AFileSet != null)
             {
-                var files = (treeView.SelectedNode.Tag as AFileSet)!.files;
+                var files = (selectedNode.Tag as AFileSet)!.files;
                 if (files.Count == 0)
                     return null;
                 return files.First().fileInfo;
             }
-            else if(treeView.SelectedNode.Tag as Node != null)
+            else if(selectedNode.Tag as Node != null)
             {
-                var fileSet = (treeView.SelectedNode.Tag as Node)!.fileSets;
+                var fileSet = (selectedNode.Tag as Node)!.fileSets;
                 if (fileSet.Count == 0)//不会为null
                     return null;
                 var files = fileSet.First().files;
@@ -247,6 +251,112 @@ namespace MyAudioPlayer.PlayList
                 return files.First().fileInfo;
             }
             return null;
+        }
+        public override void DeleteCurrent() 
+        {
+            var selectedNode = GetSelectedTopNode();
+            if (selectedNode is null)
+                return;
+            var rjcode = (selectedNode.Tag as Node)!.RJ;
+            var dirname= (selectedNode.Tag as Node)!.rootRir.Name;
+            //选中下一个并移除该节点
+            if (selectedNode.NextNode != null)//移动到下个顶级节点，不能用Move(1)
+                mySelectedNode = treeView.SelectedNode = selectedNode.NextNode;
+            else if (treeView.Nodes.Count == 0)
+                mySelectedNode = treeView.SelectedNode = null;
+            else
+                mySelectedNode = treeView.SelectedNode = treeView.Nodes[0];
+            treeView.Nodes.Remove(selectedNode);
+            try
+            {         
+                //移动到deleted文件夹，这是为了防止误删
+                {
+                    var destdir = rootDir.FullName + "/deleted";
+                    if (!Directory.Exists(destdir))
+                        Directory.CreateDirectory(destdir);
+                    Directory.Move($"{rootDir.FullName}/{dirname}", $"{destdir}/{dirname}");
+                }
+                //通知DLSiteHelperServer
+                string url = $"{dlServer}/?markEliminated{rjcode}";
+                using (HttpResponseMessage response = httpClient.GetAsync(url).Result)
+                {
+                    if (response.StatusCode != System.Net.HttpStatusCode.OK)
+                        throw new Exception("DLServer Return non-success");
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                throw;
+            }
+        }
+        public override void FavCurrent() 
+        {
+            if (favDir.FullName == rootDir.FullName)//当前根目录就是favDir
+                return;
+            var selectedNode = GetSelectedTopNode();
+            if (selectedNode is null)
+                return;
+            var dirname = (selectedNode.Tag as Node)!.rootRir.Name;
+            //选中下一个并移除该节点
+            if (selectedNode.NextNode != null)//移动到下个顶级节点，不能用Move(1)
+                mySelectedNode = treeView.SelectedNode = selectedNode.NextNode;
+            else if (treeView.Nodes.Count == 0)
+                mySelectedNode = treeView.SelectedNode = null;
+            else
+                mySelectedNode = treeView.SelectedNode = treeView.Nodes[0];
+            treeView.Nodes.Remove(selectedNode);
+            try
+            {
+                var destdir = $"{favDir.FullName}/{dirname}";
+                if (!Directory.Exists(destdir))
+                    Directory.Move($"{rootDir.FullName}/{dirname}", $"{favDir.FullName}/{dirname}");
+                else//目标目录已存在则不拷贝仅删除
+                    Directory.Delete($"{rootDir.FullName}/{dirname}", true);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                throw;
+            }
+        }
+        public override string GetCurrentFileDesc() 
+        { 
+            return ""; 
+        }
+        public override void OpenLocal()
+        {
+            var selectedNode = GetSelectedTopNode();
+            if (selectedNode is null)
+                return;
+            var dir = (selectedNode.Tag as Node)!.rootRir;
+            if (!dir.Exists)
+                return;
+            //更新net版本后UseShellExecute默认值变为false导致无法打开url，需要指定为true
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(dir.FullName) { UseShellExecute = true });
+        }
+        public override void OpenWeb() 
+        {
+            var selectedNode = GetSelectedTopNode();
+            if (selectedNode is null)
+                return;
+            var rj = (selectedNode.Tag as Node)!.RJ;
+            var url = $"https://www.dlsite.com/maniax/work/=/product_id/{rj}.html";
+            //更新net版本后UseShellExecute默认值变为false导致无法打开url，需要指定为true
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        TreeNode? GetSelectedTopNode()
+        {
+            if (mySelectedNode is null)
+                return null;
+            var selectedNode = mySelectedNode!;
+            while (selectedNode.Parent != null)
+                selectedNode = selectedNode.Parent;
+            if (selectedNode.Tag as Node is null)
+                return null;
+            return selectedNode;
         }
     }
 }

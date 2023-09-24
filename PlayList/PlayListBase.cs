@@ -16,6 +16,9 @@ namespace MyAudioPlayer.PlayList
         public virtual void RefreshMainControl() { }
         //获取当前应当播放的文件
         public abstract FileInfo? GetCurrentFile();
+        public virtual string GetCurrentFileDesc() { return ""; }
+        public virtual void OpenLocal() { }
+        public virtual void OpenWeb() { }
         public virtual void MountSelectedChangeEvent(TreeNodeMouseClickEventHandler handler) { }
         public virtual void UnmountSelectedChangeEvent(TreeNodeMouseClickEventHandler handler) { }
         public virtual void DeleteCurrent() { }
