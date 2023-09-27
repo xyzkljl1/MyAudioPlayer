@@ -27,14 +27,16 @@ namespace MyAudioPlayer
             }
             {
                 PlayListTab.SelectedIndexChanged += this.OnCurrentPlayListChanged;
-                playButton.Click += this.OnPlayButtonClicked;
-                pauseButton.Click += this.OnPauseButtonClicked;
-                prevButton.Click += this.OnPrevButtonClicked;
-                nextButton.Click += this.OnNextButtonClicked;
-                delButton.Click += this.OnDelButtonClicked;
-                favButton.Click += this.OnFavButtonClicked;
-                openLocalButton.Click += delegate { playLists[PlayListTab.SelectedIndex].OpenLocal(); };
-                openWebButton.Click += delegate { playLists[PlayListTab.SelectedIndex].OpenWeb(); };
+                PlayButton.Click += this.OnPlayButtonClicked;
+                PauseButton.Click += this.OnPauseButtonClicked;
+                PrevButton.Click += this.OnPrevButtonClicked;
+                NextButton.Click += this.OnNextButtonClicked;
+                DelButton.Click += this.OnDelButtonClicked;
+                DelPartButton.Click += this.OnDelPartButtonClicked;
+                FavButton.Click += this.OnFavButtonClicked;
+                SelectCurrentButton.Click += delegate { playLists[PlayListTab.SelectedIndex].SelectCurrent(); };
+                OpenLocalButton.Click += delegate { playLists[PlayListTab.SelectedIndex].OpenLocalSelected(); };
+                OpenWebButton.Click += delegate { playLists[PlayListTab.SelectedIndex].OpenWebSelected(); };
                 playSlider.ValueChanged += OnSliderValueChanged;
                 //防止拖动进度条时重设进度条
                 playSlider.MouseDown += delegate { timer.Enabled = false; };
@@ -51,9 +53,10 @@ namespace MyAudioPlayer
         void OnPlayTimerTick(object? sender, ElapsedEventArgs e)
         {
             if (currentFile != null)//timer触发的响应不在主线程，需要用invoke
-                this.Invoke(delegate () 
+                this.Invoke(() => 
                         { 
-                            this.playSlider.Value = (int)Math.Floor(currentFileReader.CurrentTime.TotalSeconds);
+                            if(currentFileReader is not null)
+                                this.playSlider.Value = (int)Math.Floor(currentFileReader.CurrentTime.TotalSeconds);
                         });
         }
         //slider因任何原因产生变化时，修改label
@@ -81,12 +84,12 @@ namespace MyAudioPlayer
         }
         void OnPrevButtonClicked(object? sender, EventArgs e)
         {
-            playLists[PlayListTab.SelectedIndex].Move(-1);
+            playLists[PlayListTab.SelectedIndex].MoveCurrent(-1);
             ReloadCurrentFile();
         }
         void OnNextButtonClicked(object? sender, EventArgs e)
         {
-            playLists[PlayListTab.SelectedIndex].Move(1);
+            playLists[PlayListTab.SelectedIndex].MoveCurrent(1);
             ReloadCurrentFile();
         }
         void UnmountPlayStopEvent()
@@ -99,22 +102,57 @@ namespace MyAudioPlayer
         }
         void OnDelButtonClicked(object? sender, EventArgs e)
         {
-            bool playing=audioDevice.PlaybackState==PlaybackState.Playing;
-            Stop(true);
-            playLists[PlayListTab.SelectedIndex].DeleteCurrent();
-            ReloadCurrentFile();
-            if (playing)//reload不会改变播放状态，但是del前手动停止了，所以需要重新播放
+            if (audioDevice.PlaybackState != PlaybackState.Playing)
+                playLists[PlayListTab.SelectedIndex].DeleteSelected();
+            else
+            {
+                //因为可能会删除当前文件，需要先stop
+                //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
+                var tmpFile = currentFile;
+                var tmpPosition = currentFileReader!.Position;
+                Stop(true);
+                playLists[PlayListTab.SelectedIndex].DeleteSelected();
+                ReloadCurrentFile();
+                if (currentFile == tmpFile)
+                    currentFileReader.Position = tmpPosition;
                 Play();
+            }
+        }
+        void OnDelPartButtonClicked(object? sender, EventArgs e)
+        {
+            if (audioDevice.PlaybackState != PlaybackState.Playing)
+                playLists[PlayListTab.SelectedIndex].DeleteSelectedPart();
+            else
+            {
+                //因为可能会删除当前文件，需要先stop
+                //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
+                var tmpFile = currentFile;
+                var tmpPosition = currentFileReader!.Position;
+                Stop(true);
+                playLists[PlayListTab.SelectedIndex].DeleteSelectedPart();
+                ReloadCurrentFile();
+                if (currentFile == tmpFile)
+                    currentFileReader.Position = tmpPosition;
+                Play();
+            }
         }
         void OnFavButtonClicked(object? sender, EventArgs e)
         {
-            //Fav可能会移动文件，也要和Delete一样处理
-            bool playing = audioDevice.PlaybackState == PlaybackState.Playing;
-            Stop(true);
-            playLists[PlayListTab.SelectedIndex].FavCurrent();
-            ReloadCurrentFile();
-            if (playing)//reload不会改变播放状态，但是del前手动停止了，所以需要重新播放
+            if(audioDevice.PlaybackState != PlaybackState.Playing)
+                playLists[PlayListTab.SelectedIndex].FavSelected();
+            else
+            {   
+                //因为可能会删除当前文件，需要先stop
+                //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
+                var tmpFile = currentFile;
+                var tmpPosition=currentFileReader!.Position;
+                Stop(true);
+                playLists[PlayListTab.SelectedIndex].FavSelected();
+                ReloadCurrentFile();
+                if (currentFile == tmpFile)
+                    currentFileReader.Position = tmpPosition;
                 Play();
+            }
         }
         void Stop(bool releaseFileReader=false)
         {
@@ -155,7 +193,7 @@ namespace MyAudioPlayer
                 audioDevice.Init(currentFileReader);
             }
             //显示信息
-            titleBox.Text = currentFile!.ToString();
+            titleBox.Text = playLists[PlayListTab.SelectedIndex].GetCurrentFileDesc();
             this.playSlider.Minimum= 0;
             this.playSlider.Maximum=(int)Math.Floor(currentFileReader.TotalTime.TotalSeconds);
             this.playSlider.Value = (int)Math.Floor(currentFileReader.CurrentTime.TotalSeconds);
@@ -175,7 +213,7 @@ namespace MyAudioPlayer
             this.Invoke(delegate ()
             {
                 //下一曲
-                playLists[PlayListTab.SelectedIndex].Move(1);
+                playLists[PlayListTab.SelectedIndex].MoveCurrent(1);
                 ReloadCurrentFile();
             });
         }
@@ -184,11 +222,10 @@ namespace MyAudioPlayer
             int currentIndex=PlayListTab.SelectedIndex;
             if(currentIndex>=0&&currentIndex<=playLists.Count)
             {
-                playLists[currentIndex].RefreshMainControl();
                 //令当前选项卡选择曲目时触发该控件响应事件
                 foreach (var playList in playLists)
-                    playList.UnmountSelectedChangeEvent(this.PlayList_DoubleClicked);
-                playLists[currentIndex].MountSelectedChangeEvent(this.PlayList_DoubleClicked);
+                    playList.UnmountDoubleClickEvent(this.PlayList_DoubleClicked);
+                playLists[currentIndex].MountDoubleClickEvent(this.PlayList_DoubleClicked);
                 //暂定：不触发PlayList_SelectedIndexChanged，即继续播放之前的曲目
             }
             else
@@ -204,10 +241,11 @@ namespace MyAudioPlayer
             foreach(var playList in playLists)
             {
                 var tabPage = new TabPage();
+                tabPage.AutoScroll = true;
                 tabPage.Text = playList.Title;
                 tabPage.BorderStyle = BorderStyle.Fixed3D;
-                //tabpage里的控件右侧到tabpage右边缘会有一段空白，宽度等于tabPage.Width，所以将width设为0规避,为什么会这样？                
-                tabPage.Width = 0;
+                //tabpage里的控件右侧到tabpage右边缘会有一段空白，宽度约等于tabPage.Width-120，将tabPage.Width设为120规避(小于120会导致滚动条被挡住)，为什么会这样？                
+                tabPage.Width = 120;
                 tabPage.Controls.Add(playList.GetMainControl());
                 PlayListTab.TabPages.Add(tabPage);
             }
@@ -227,6 +265,11 @@ namespace MyAudioPlayer
             ReloadCurrentFile();
             Play();
             this.Refresh();
+        }
+        protected override void OnClosed(EventArgs e)
+        {
+            timer.Stop();//防止关闭窗口后timer还触发事件导致异常
+            base.OnClosed(e);
         }
     }
 }

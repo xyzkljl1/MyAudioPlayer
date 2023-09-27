@@ -7,3 +7,4 @@
 /obj
 /config.json
 *.user
+/bin/Release/net6.0-windows

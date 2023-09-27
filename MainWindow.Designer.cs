@@ -29,17 +29,19 @@
         private void InitializeComponent()
         {
             this.UpPanel = new System.Windows.Forms.Panel();
-            this.openWebButton = new System.Windows.Forms.Button();
-            this.openLocalButton = new System.Windows.Forms.Button();
+            this.SelectCurrentButton = new System.Windows.Forms.Button();
+            this.FavButton = new System.Windows.Forms.Button();
+            this.OpenWebButton = new System.Windows.Forms.Button();
+            this.OpenLocalButton = new System.Windows.Forms.Button();
             this.sliderLabel = new System.Windows.Forms.Label();
             this.volumeSlider = new System.Windows.Forms.TrackBar();
             this.playSlider = new System.Windows.Forms.TrackBar();
-            this.favButton = new System.Windows.Forms.Button();
-            this.delButton = new System.Windows.Forms.Button();
-            this.nextButton = new System.Windows.Forms.Button();
-            this.prevButton = new System.Windows.Forms.Button();
-            this.pauseButton = new System.Windows.Forms.Button();
-            this.playButton = new System.Windows.Forms.Button();
+            this.DelButton = new System.Windows.Forms.Button();
+            this.DelPartButton = new System.Windows.Forms.Button();
+            this.NextButton = new System.Windows.Forms.Button();
+            this.PrevButton = new System.Windows.Forms.Button();
+            this.PauseButton = new System.Windows.Forms.Button();
+            this.PlayButton = new System.Windows.Forms.Button();
             this.titleBox = new System.Windows.Forms.RichTextBox();
             this.DownPanel = new System.Windows.Forms.Panel();
             this.PlayListTab = new System.Windows.Forms.TabControl();
@@ -53,47 +55,69 @@
             // 
             this.UpPanel.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
-            this.UpPanel.Controls.Add(this.openWebButton);
-            this.UpPanel.Controls.Add(this.openLocalButton);
+            this.UpPanel.Controls.Add(this.SelectCurrentButton);
+            this.UpPanel.Controls.Add(this.FavButton);
+            this.UpPanel.Controls.Add(this.OpenWebButton);
+            this.UpPanel.Controls.Add(this.OpenLocalButton);
             this.UpPanel.Controls.Add(this.sliderLabel);
             this.UpPanel.Controls.Add(this.volumeSlider);
             this.UpPanel.Controls.Add(this.playSlider);
-            this.UpPanel.Controls.Add(this.favButton);
-            this.UpPanel.Controls.Add(this.delButton);
-            this.UpPanel.Controls.Add(this.nextButton);
-            this.UpPanel.Controls.Add(this.prevButton);
-            this.UpPanel.Controls.Add(this.pauseButton);
-            this.UpPanel.Controls.Add(this.playButton);
+            this.UpPanel.Controls.Add(this.DelButton);
+            this.UpPanel.Controls.Add(this.DelPartButton);
+            this.UpPanel.Controls.Add(this.NextButton);
+            this.UpPanel.Controls.Add(this.PrevButton);
+            this.UpPanel.Controls.Add(this.PauseButton);
+            this.UpPanel.Controls.Add(this.PlayButton);
             this.UpPanel.Controls.Add(this.titleBox);
             this.UpPanel.Location = new System.Drawing.Point(12, 12);
             this.UpPanel.Name = "UpPanel";
             this.UpPanel.Size = new System.Drawing.Size(1286, 192);
             this.UpPanel.TabIndex = 0;
             // 
-            // openWebButton
+            // SelectCurrentButton
             // 
-            this.openWebButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.openWebButton.Location = new System.Drawing.Point(1112, 0);
-            this.openWebButton.Name = "openWebButton";
-            this.openWebButton.Size = new System.Drawing.Size(80, 60);
-            this.openWebButton.TabIndex = 11;
-            this.openWebButton.Text = "Web";
-            this.openWebButton.UseVisualStyleBackColor = true;
+            this.SelectCurrentButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.SelectCurrentButton.Location = new System.Drawing.Point(940, 127);
+            this.SelectCurrentButton.Name = "SelectCurrentButton";
+            this.SelectCurrentButton.Size = new System.Drawing.Size(80, 62);
+            this.SelectCurrentButton.TabIndex = 13;
+            this.SelectCurrentButton.Text = "选中播放的曲目";
+            this.SelectCurrentButton.UseVisualStyleBackColor = true;
             // 
-            // openLocalButton
+            // FavButton
             // 
-            this.openLocalButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.openLocalButton.Location = new System.Drawing.Point(1198, 0);
-            this.openLocalButton.Name = "openLocalButton";
-            this.openLocalButton.Size = new System.Drawing.Size(80, 60);
-            this.openLocalButton.TabIndex = 10;
-            this.openLocalButton.Text = "Local";
-            this.openLocalButton.UseVisualStyleBackColor = true;
+            this.FavButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.FavButton.Location = new System.Drawing.Point(1026, 127);
+            this.FavButton.Name = "FavButton";
+            this.FavButton.Size = new System.Drawing.Size(80, 62);
+            this.FavButton.TabIndex = 12;
+            this.FavButton.Text = "Fav";
+            this.FavButton.UseVisualStyleBackColor = true;
+            // 
+            // OpenWebButton
+            // 
+            this.OpenWebButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.OpenWebButton.Location = new System.Drawing.Point(1112, 0);
+            this.OpenWebButton.Name = "OpenWebButton";
+            this.OpenWebButton.Size = new System.Drawing.Size(80, 60);
+            this.OpenWebButton.TabIndex = 11;
+            this.OpenWebButton.Text = "Web";
+            this.OpenWebButton.UseVisualStyleBackColor = true;
+            // 
+            // OpenLocalButton
+            // 
+            this.OpenLocalButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.OpenLocalButton.Location = new System.Drawing.Point(1198, 0);
+            this.OpenLocalButton.Name = "OpenLocalButton";
+            this.OpenLocalButton.Size = new System.Drawing.Size(80, 60);
+            this.OpenLocalButton.TabIndex = 10;
+            this.OpenLocalButton.Text = "Local";
+            this.OpenLocalButton.UseVisualStyleBackColor = true;
             // 
             // sliderLabel
             // 
             this.sliderLabel.AutoSize = true;
-            this.sliderLabel.Location = new System.Drawing.Point(1024, 132);
+            this.sliderLabel.Location = new System.Drawing.Point(894, 132);
             this.sliderLabel.Name = "sliderLabel";
             this.sliderLabel.Size = new System.Drawing.Size(40, 20);
             this.sliderLabel.TabIndex = 9;
@@ -115,69 +139,69 @@
             this.playSlider.Location = new System.Drawing.Point(390, 132);
             this.playSlider.Maximum = 0;
             this.playSlider.Name = "playSlider";
-            this.playSlider.Size = new System.Drawing.Size(628, 56);
+            this.playSlider.Size = new System.Drawing.Size(488, 56);
             this.playSlider.TabIndex = 7;
             this.playSlider.TickFrequency = 60;
             // 
-            // favButton
+            // DelButton
             // 
-            this.favButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.favButton.Location = new System.Drawing.Point(1112, 127);
-            this.favButton.Name = "favButton";
-            this.favButton.Size = new System.Drawing.Size(80, 62);
-            this.favButton.TabIndex = 6;
-            this.favButton.Text = "Fav";
-            this.favButton.UseVisualStyleBackColor = true;
+            this.DelButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.DelButton.Location = new System.Drawing.Point(1112, 127);
+            this.DelButton.Name = "DelButton";
+            this.DelButton.Size = new System.Drawing.Size(80, 62);
+            this.DelButton.TabIndex = 6;
+            this.DelButton.Text = "Del";
+            this.DelButton.UseVisualStyleBackColor = true;
             // 
-            // delButton
+            // DelPartButton
             // 
-            this.delButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
-            this.delButton.Location = new System.Drawing.Point(1198, 127);
-            this.delButton.Name = "delButton";
-            this.delButton.Size = new System.Drawing.Size(80, 60);
-            this.delButton.TabIndex = 5;
-            this.delButton.Text = "Del";
-            this.delButton.UseVisualStyleBackColor = true;
+            this.DelPartButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.DelPartButton.Location = new System.Drawing.Point(1198, 127);
+            this.DelPartButton.Name = "DelPartButton";
+            this.DelPartButton.Size = new System.Drawing.Size(80, 62);
+            this.DelPartButton.TabIndex = 5;
+            this.DelPartButton.Text = "DelFile";
+            this.DelPartButton.UseVisualStyleBackColor = true;
             // 
-            // nextButton
+            // NextButton
             // 
-            this.nextButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
-            this.nextButton.Location = new System.Drawing.Point(290, 127);
-            this.nextButton.Name = "nextButton";
-            this.nextButton.Size = new System.Drawing.Size(94, 61);
-            this.nextButton.TabIndex = 4;
-            this.nextButton.Text = "Next";
-            this.nextButton.UseVisualStyleBackColor = true;
+            this.NextButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.NextButton.Location = new System.Drawing.Point(290, 127);
+            this.NextButton.Name = "NextButton";
+            this.NextButton.Size = new System.Drawing.Size(94, 61);
+            this.NextButton.TabIndex = 4;
+            this.NextButton.Text = "Next";
+            this.NextButton.UseVisualStyleBackColor = true;
             // 
-            // prevButton
+            // PrevButton
             // 
-            this.prevButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
-            this.prevButton.Location = new System.Drawing.Point(190, 127);
-            this.prevButton.Name = "prevButton";
-            this.prevButton.Size = new System.Drawing.Size(94, 61);
-            this.prevButton.TabIndex = 3;
-            this.prevButton.Text = "Prev";
-            this.prevButton.UseVisualStyleBackColor = true;
+            this.PrevButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.PrevButton.Location = new System.Drawing.Point(190, 127);
+            this.PrevButton.Name = "PrevButton";
+            this.PrevButton.Size = new System.Drawing.Size(94, 61);
+            this.PrevButton.TabIndex = 3;
+            this.PrevButton.Text = "Prev";
+            this.PrevButton.UseVisualStyleBackColor = true;
             // 
-            // pauseButton
+            // PauseButton
             // 
-            this.pauseButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
-            this.pauseButton.Location = new System.Drawing.Point(103, 127);
-            this.pauseButton.Name = "pauseButton";
-            this.pauseButton.Size = new System.Drawing.Size(81, 61);
-            this.pauseButton.TabIndex = 2;
-            this.pauseButton.Text = "Pause";
-            this.pauseButton.UseVisualStyleBackColor = true;
+            this.PauseButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.PauseButton.Location = new System.Drawing.Point(103, 127);
+            this.PauseButton.Name = "PauseButton";
+            this.PauseButton.Size = new System.Drawing.Size(81, 61);
+            this.PauseButton.TabIndex = 2;
+            this.PauseButton.Text = "Pause";
+            this.PauseButton.UseVisualStyleBackColor = true;
             // 
-            // playButton
+            // PlayButton
             // 
-            this.playButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
-            this.playButton.Location = new System.Drawing.Point(3, 127);
-            this.playButton.Name = "playButton";
-            this.playButton.Size = new System.Drawing.Size(94, 62);
-            this.playButton.TabIndex = 1;
-            this.playButton.Text = "Play";
-            this.playButton.UseVisualStyleBackColor = true;
+            this.PlayButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.PlayButton.Location = new System.Drawing.Point(3, 127);
+            this.PlayButton.Name = "PlayButton";
+            this.PlayButton.Size = new System.Drawing.Size(94, 62);
+            this.PlayButton.TabIndex = 1;
+            this.PlayButton.Text = "Play";
+            this.PlayButton.UseVisualStyleBackColor = true;
             // 
             // titleBox
             // 
@@ -190,7 +214,7 @@
             this.titleBox.ReadOnly = true;
             this.titleBox.Size = new System.Drawing.Size(1079, 118);
             this.titleBox.TabIndex = 0;
-            this.titleBox.Text = "titleBox";
+            this.titleBox.Text = "";
             // 
             // DownPanel
             // 
@@ -238,16 +262,18 @@
         private Panel DownPanel;
         private TabControl PlayListTab;
         private RichTextBox titleBox;
-        private Button delButton;
-        private Button nextButton;
-        private Button prevButton;
-        private Button pauseButton;
-        private Button playButton;
-        private Button favButton;
+        private Button DelPartButton;
+        private Button NextButton;
+        private Button PrevButton;
+        private Button PauseButton;
+        private Button PlayButton;
+        private Button DelButton;
         private TrackBar volumeSlider;
         private TrackBar playSlider;
         private Label sliderLabel;
-        private Button openWebButton;
-        private Button openLocalButton;
+        private Button OpenWebButton;
+        private Button OpenLocalButton;
+        private Button FavButton;
+        private Button SelectCurrentButton;
     }
 }
