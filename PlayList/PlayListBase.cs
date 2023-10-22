@@ -22,9 +22,12 @@ namespace MyAudioPlayer.PlayList
         public virtual void OpenWebSelected() { }
         public virtual void MountDoubleClickEvent(TreeNodeMouseClickEventHandler handler) { }
         public virtual void UnmountDoubleClickEvent(TreeNodeMouseClickEventHandler handler) { }
-        public virtual void DeleteSelectedPart() { }
-        public virtual void DeleteSelected() { }
-        public virtual void FavSelected() { }
+        //private virtual void DeleteSelectedPart() { }
+        //private virtual void DeleteSelected() { }
+        //private virtual void FavSelected() { }
+        public virtual void DeleteCurrentPart() { }
+        public virtual void DeleteCurrent() { }
+        public virtual void FavCurrent() { }
         public virtual void SelectCurrent() { }
     }
 }

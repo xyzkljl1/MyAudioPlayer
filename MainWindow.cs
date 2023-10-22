@@ -103,7 +103,7 @@ namespace MyAudioPlayer
         void OnDelButtonClicked(object? sender, EventArgs e)
         {
             if (audioDevice.PlaybackState != PlaybackState.Playing)
-                playLists[PlayListTab.SelectedIndex].DeleteSelected();
+                playLists[PlayListTab.SelectedIndex].DeleteCurrent();
             else
             {
                 //因为可能会删除当前文件，需要先stop
@@ -111,7 +111,7 @@ namespace MyAudioPlayer
                 var tmpFile = currentFile;
                 var tmpPosition = currentFileReader!.Position;
                 Stop(true);
-                playLists[PlayListTab.SelectedIndex].DeleteSelected();
+                playLists[PlayListTab.SelectedIndex].DeleteCurrent();
                 ReloadCurrentFile();
                 if (currentFile == tmpFile)
                     currentFileReader.Position = tmpPosition;
@@ -121,7 +121,7 @@ namespace MyAudioPlayer
         void OnDelPartButtonClicked(object? sender, EventArgs e)
         {
             if (audioDevice.PlaybackState != PlaybackState.Playing)
-                playLists[PlayListTab.SelectedIndex].DeleteSelectedPart();
+                playLists[PlayListTab.SelectedIndex].DeleteCurrentPart();
             else
             {
                 //因为可能会删除当前文件，需要先stop
@@ -129,7 +129,7 @@ namespace MyAudioPlayer
                 var tmpFile = currentFile;
                 var tmpPosition = currentFileReader!.Position;
                 Stop(true);
-                playLists[PlayListTab.SelectedIndex].DeleteSelectedPart();
+                playLists[PlayListTab.SelectedIndex].DeleteCurrentPart();
                 ReloadCurrentFile();
                 if (currentFile == tmpFile)
                     currentFileReader.Position = tmpPosition;
@@ -139,7 +139,7 @@ namespace MyAudioPlayer
         void OnFavButtonClicked(object? sender, EventArgs e)
         {
             if(audioDevice.PlaybackState != PlaybackState.Playing)
-                playLists[PlayListTab.SelectedIndex].FavSelected();
+                playLists[PlayListTab.SelectedIndex].FavCurrent();
             else
             {   
                 //因为可能会删除当前文件，需要先stop
@@ -147,7 +147,7 @@ namespace MyAudioPlayer
                 var tmpFile = currentFile;
                 var tmpPosition=currentFileReader!.Position;
                 Stop(true);
-                playLists[PlayListTab.SelectedIndex].FavSelected();
+                playLists[PlayListTab.SelectedIndex].FavCurrent();
                 ReloadCurrentFile();
                 if (currentFile == tmpFile)
                     currentFileReader.Position = tmpPosition;

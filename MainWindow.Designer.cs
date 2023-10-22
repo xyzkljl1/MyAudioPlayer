@@ -91,7 +91,7 @@
             this.FavButton.Name = "FavButton";
             this.FavButton.Size = new System.Drawing.Size(80, 62);
             this.FavButton.TabIndex = 12;
-            this.FavButton.Text = "Fav";
+            this.FavButton.Text = "FavCur";
             this.FavButton.UseVisualStyleBackColor = true;
             // 
             // OpenWebButton
@@ -150,7 +150,7 @@
             this.DelButton.Name = "DelButton";
             this.DelButton.Size = new System.Drawing.Size(80, 62);
             this.DelButton.TabIndex = 6;
-            this.DelButton.Text = "Del";
+            this.DelButton.Text = "DelCur";
             this.DelButton.UseVisualStyleBackColor = true;
             // 
             // DelPartButton
@@ -160,7 +160,7 @@
             this.DelPartButton.Name = "DelPartButton";
             this.DelPartButton.Size = new System.Drawing.Size(80, 62);
             this.DelPartButton.TabIndex = 5;
-            this.DelPartButton.Text = "DelFile";
+            this.DelPartButton.Text = "DelPartCur";
             this.DelPartButton.UseVisualStyleBackColor = true;
             // 
             // NextButton

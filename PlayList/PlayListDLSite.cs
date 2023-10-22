@@ -66,6 +66,7 @@ namespace MyAudioPlayer.PlayList
         private DirectoryInfo favDir;
         private List<Node> nodes = new List<Node>();
         private HttpClient httpClient;
+        ContextMenuStrip contextMenuStrip=new ContextMenuStrip();
         public PlayListDLSite(string _rootDir)
         {
             rootDir = new DirectoryInfo(_rootDir);
@@ -75,9 +76,14 @@ namespace MyAudioPlayer.PlayList
             treeView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
-            treeView.NodeMouseDoubleClick += this.DoubleClicked;
+            treeView.NodeMouseDoubleClick += this.NodeDoubleClicked;
+            treeView.NodeMouseClick += this.NodeClicked;
             //treeView.Scrollable = true;//需要设置tabPage.AutoScroll，而不是treeView.Scrollable
             httpClient = new HttpClient();
+            contextMenuStrip.Items.Add("Fav");
+            contextMenuStrip.Items.Add("Del");
+            contextMenuStrip.Items.Add("DelPart");
+            contextMenuStrip.ItemClicked += this.ContextMenuClicked;
             Task.Run(LoadFiles);
         }
         //TODO: 添加搜索栏
@@ -85,9 +91,27 @@ namespace MyAudioPlayer.PlayList
         {
             return treeView;
         }
-        private void DoubleClicked(object? sender, TreeNodeMouseClickEventArgs e)
+        private void NodeDoubleClicked(object? sender, TreeNodeMouseClickEventArgs e)
         {
             currentNode = treeView.SelectedNode;
+        }
+        private void NodeClicked(object? sender, TreeNodeMouseClickEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right)
+                return;
+            if (e.Node == null)
+                return;
+            treeView.SelectedNode = e.Node;
+            contextMenuStrip.Show(treeView,e.X,e.Y);
+        }
+        private void ContextMenuClicked(object? sender, ToolStripItemClickedEventArgs e)
+        {
+            if (e.ClickedItem.Text == "Fav")
+                FavNode(treeView.SelectedNode);
+            else if(e.ClickedItem.Text =="Del")
+                DeleteNode(treeView.SelectedNode);
+            else if(e.ClickedItem.Text=="DelPart")
+                DeleteNodePart(treeView.SelectedNode);
         }
         public override void MountDoubleClickEvent(TreeNodeMouseClickEventHandler handler)
         {
@@ -280,11 +304,11 @@ namespace MyAudioPlayer.PlayList
             return null;
         }
         //删除选中的节点的文件
-        public override void DeleteSelectedPart()
+        public void DeleteNodePart(TreeNode _node)
         {
-            if (treeView.SelectedNode is null)
+            var selectedNode = _node;
+            if (selectedNode is null)
                 return;
-            var selectedNode = treeView.SelectedNode;
             if (selectedNode.Tag is Node)//顶级节点
                 return;//防止误删
             if (selectedNode.Tag is AFileSet)
@@ -329,9 +353,9 @@ namespace MyAudioPlayer.PlayList
             }
         }
         //删除选中的节点所在的顶级节点并通知server标记为eliminated
-        public override void DeleteSelected() 
+        public void DeleteNode(TreeNode _node) 
         {
-            var selectedNode = GetSelectedTopNode();
+            var selectedNode = GetTopNode(_node);
             if (selectedNode is null)
                 return;
             var node = (selectedNode.Tag as Node)!;
@@ -390,11 +414,11 @@ namespace MyAudioPlayer.PlayList
                 }
             }
         }
-        public override void FavSelected() 
+        public void FavNode(TreeNode _node) 
         {
             if (favDir.FullName == rootDir.FullName)//当前根目录就是favDir
                 return;
-            var selectedNode = GetSelectedTopNode();
+            var selectedNode = GetTopNode(_node);
             if (selectedNode is null)
                 return;
             var node = (selectedNode.Tag as Node)!;
@@ -442,6 +466,21 @@ namespace MyAudioPlayer.PlayList
                 throw;
             }
         }
+
+        public override void DeleteCurrentPart()
+        {
+            DeleteNodePart(currentNode!);
+        }
+        //删除选中的节点所在的顶级节点并通知server标记为eliminated
+        public override void DeleteCurrent()
+        {
+            DeleteNode(currentNode!);
+        }
+        public override void FavCurrent()
+        {
+            FavNode(currentNode!);
+        }
+
         public override string GetCurrentFileDesc() 
         {
             var desc = "";
@@ -464,7 +503,7 @@ namespace MyAudioPlayer.PlayList
         }
         public override void OpenLocalSelected()
         {
-            var selectedNode = GetSelectedTopNode();
+            var selectedNode = GetTopNode(treeView.SelectedNode);
             if (selectedNode is null)
                 return;
             var dir = (selectedNode.Tag as Node)!.rootRir;
@@ -476,7 +515,7 @@ namespace MyAudioPlayer.PlayList
         }
         public override void OpenWebSelected() 
         {
-            var selectedNode = GetSelectedTopNode();
+            var selectedNode = GetTopNode(treeView.SelectedNode);
             if (selectedNode is null)
                 return;
             var rj = (selectedNode.Tag as Node)!.RJ;
@@ -485,9 +524,10 @@ namespace MyAudioPlayer.PlayList
             System.Diagnostics.Process.Start(
                 new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
         }
-        TreeNode? GetSelectedTopNode()
+        TreeNode? GetTopNode(TreeNode selectedNode)
         {
-            var selectedNode = treeView.SelectedNode;
+            if (selectedNode is null)
+                return null;
             while (selectedNode.Parent is not null)
                 selectedNode = selectedNode.Parent;
             if (selectedNode.Tag as Node is null)
@@ -496,14 +536,9 @@ namespace MyAudioPlayer.PlayList
         }
         TreeNode? GetCurrentTopNode()
         {
-            if (this.currentNode is null)
+            if (currentNode is null)
                 return null;
-            var currentNode = this.currentNode!;
-            while (currentNode.Parent is not null)
-                currentNode = currentNode.Parent;
-            if (currentNode.Tag as Node is null)
-                return null;
-            return currentNode;
+            return GetTopNode(this.currentNode);
         }
 /*        TreeNode? GetSelectedLeafNode()
         {
@@ -576,6 +611,14 @@ namespace MyAudioPlayer.PlayList
                 else if (subnode.Nodes.Contains(child))
                     return true;
             return false;
+        }
+        public override void SelectCurrent() 
+        {
+            if (currentNode is null)
+                return;
+            treeView.SelectedNode = currentNode;
+            treeView.SelectedNode.EnsureVisible();
+            treeView.Focus();//treeView如果不处于focus状态，选中的条目不会高亮看不见
         }
     }
 }
