@@ -6,6 +6,14 @@ using System.Threading.Tasks;
 
 namespace MyAudioPlayer.PlayList
 {
+    public class MyFileEditEventArgs : EventArgs
+    {
+        public bool needContinue { get; set; }=false;
+        public long prevPosition { get; set; }=0;
+        public FileInfo? prevFile { get; set; } = null;
+        public MyFileEditEventArgs(){}
+    }
+    public delegate void MyFileEditEventHandler(object? sender, MyFileEditEventArgs e);
     internal abstract class PlayListBase
     {
         public string Title { get; set; } = "";
@@ -29,5 +37,23 @@ namespace MyAudioPlayer.PlayList
         public virtual void DeleteCurrent() { }
         public virtual void FavCurrent() { }
         public virtual void SelectCurrent() { }
+        //编辑文件(Fav/Del/DelPart操作)开始和结束事件
+        //由于某些操作会移动文件，如果当前文件被占用(即正在播放)会导致操作失败，需要在移动文件前通知主窗口
+        protected event MyFileEditEventHandler OnFileEditBegin;
+        protected event MyFileEditEventHandler OnFileEditEnd;
+        protected void MountFileEditEvent(MyFileEditEventHandler begin, MyFileEditEventHandler end)
+        {
+            OnFileEditBegin += begin;
+            OnFileEditEnd += end;
+        }
+        //子类不能直接调用OnFileEditBegin，需要在基类用一个函数包一下
+        public void RasieFileEditBeginEvent(MyFileEditEventArgs args)
+        {
+            OnFileEditBegin(null, args);
+        }
+        public void RasieFileEditEndEvent(MyFileEditEventArgs args)
+        {
+            OnFileEditEnd(null, args);
+        }
     }
 }

@@ -66,8 +66,9 @@ namespace MyAudioPlayer.PlayList
         private DirectoryInfo favDir;
         private List<Node> nodes = new List<Node>();
         private HttpClient httpClient;
-        ContextMenuStrip contextMenuStrip=new ContextMenuStrip();
-        public PlayListDLSite(string _rootDir)
+        ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
+        ToolStripItem contextMenuStripItemDel;
+        public PlayListDLSite(string _rootDir,MyFileEditEventHandler _begin,MyFileEditEventHandler _end)
         {
             rootDir = new DirectoryInfo(_rootDir);
             dlServer = Config.DLServerAddress;
@@ -81,9 +82,10 @@ namespace MyAudioPlayer.PlayList
             //treeView.Scrollable = true;//需要设置tabPage.AutoScroll，而不是treeView.Scrollable
             httpClient = new HttpClient();
             contextMenuStrip.Items.Add("Fav");
-            contextMenuStrip.Items.Add("Del");
             contextMenuStrip.Items.Add("DelPart");
+            contextMenuStripItemDel = contextMenuStrip.Items.Add("Del");
             contextMenuStrip.ItemClicked += this.ContextMenuClicked;
+            MountFileEditEvent(_begin, _end);
             Task.Run(LoadFiles);
         }
         //TODO: 添加搜索栏
@@ -102,16 +104,42 @@ namespace MyAudioPlayer.PlayList
             if (e.Node == null)
                 return;
             treeView.SelectedNode = e.Node;
-            contextMenuStrip.Show(treeView,e.X,e.Y);
+            if(e.Node!=null)
+            {
+                if (e.Node.Tag as Node is not null)//只在顶级节点上显示Del，防止手抖误删
+                {
+                    if (!contextMenuStrip.Items.Contains(contextMenuStripItemDel))
+                        contextMenuStrip.Items.Add(contextMenuStripItemDel);
+                }
+                else
+                {
+                    if (contextMenuStrip.Items.Contains(contextMenuStripItemDel))
+                        contextMenuStrip.Items.Remove(contextMenuStripItemDel);
+                }
+                contextMenuStrip.Show(treeView, e.X, e.Y);
+            }
         }
         private void ContextMenuClicked(object? sender, ToolStripItemClickedEventArgs e)
         {
+            MyFileEditEventArgs tmp_args=new MyFileEditEventArgs();
             if (e.ClickedItem.Text == "Fav")
+            {
+                RasieFileEditBeginEvent(tmp_args);
                 FavNode(treeView.SelectedNode);
+                RasieFileEditEndEvent(tmp_args);
+            }
             else if(e.ClickedItem.Text =="Del")
+            {
+                RasieFileEditBeginEvent(tmp_args);
                 DeleteNode(treeView.SelectedNode);
+                RasieFileEditEndEvent(tmp_args);
+            }
             else if(e.ClickedItem.Text=="DelPart")
+            {
+                RasieFileEditBeginEvent(tmp_args);
                 DeleteNodePart(treeView.SelectedNode);
+                RasieFileEditEndEvent(tmp_args);
+            }
         }
         public override void MountDoubleClickEvent(TreeNodeMouseClickEventHandler handler)
         {

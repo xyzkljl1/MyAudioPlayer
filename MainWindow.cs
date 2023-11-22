@@ -68,7 +68,7 @@ namespace MyAudioPlayer
         //用户拖动进度条结束时，改变播放进度
         void OnSliderScrolled(object? sender, EventArgs e)
         {
-            if (currentFile == null)
+            if (currentFile is null || currentFileReader is null)
                 return;
             int sec = playSlider.Value;
             currentFileReader.CurrentTime =new TimeSpan(sec*TimeSpan.TicksPerSecond);
@@ -100,22 +100,36 @@ namespace MyAudioPlayer
         {
             audioDevice.PlaybackStopped += this.OnPlayStopped;
         }
+        void OnFileEditBegin(object? sender, MyFileEditEventArgs e)
+        {
+            if (audioDevice.PlaybackState != PlaybackState.Playing)
+                return;
+            //因为可能会删除当前文件，需要先stop
+            //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
+            e.needContinue = true;
+            e.prevFile = currentFile;
+            e.prevPosition = currentFileReader!.Position;
+            Stop(true);
+        }
+        void OnFileEditEnd(object? sender, MyFileEditEventArgs e)
+        {
+            if (!e.needContinue)
+                return;
+            ReloadCurrentFile();
+            if (currentFile == e.prevFile)
+                currentFileReader!.Position = e.prevPosition;
+            Play();
+        }
         void OnDelButtonClicked(object? sender, EventArgs e)
         {
             if (audioDevice.PlaybackState != PlaybackState.Playing)
                 playLists[PlayListTab.SelectedIndex].DeleteCurrent();
             else
             {
-                //因为可能会删除当前文件，需要先stop
-                //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
-                var tmpFile = currentFile;
-                var tmpPosition = currentFileReader!.Position;
-                Stop(true);
+                var arg = new MyFileEditEventArgs();
+                OnFileEditBegin(null,arg);
                 playLists[PlayListTab.SelectedIndex].DeleteCurrent();
-                ReloadCurrentFile();
-                if (currentFile == tmpFile)
-                    currentFileReader.Position = tmpPosition;
-                Play();
+                OnFileEditEnd(null, arg);
             }
         }
         void OnDelPartButtonClicked(object? sender, EventArgs e)
@@ -124,16 +138,10 @@ namespace MyAudioPlayer
                 playLists[PlayListTab.SelectedIndex].DeleteCurrentPart();
             else
             {
-                //因为可能会删除当前文件，需要先stop
-                //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
-                var tmpFile = currentFile;
-                var tmpPosition = currentFileReader!.Position;
-                Stop(true);
+                var arg = new MyFileEditEventArgs();
+                OnFileEditBegin(null, arg);
                 playLists[PlayListTab.SelectedIndex].DeleteCurrentPart();
-                ReloadCurrentFile();
-                if (currentFile == tmpFile)
-                    currentFileReader.Position = tmpPosition;
-                Play();
+                OnFileEditEnd(null, arg);
             }
         }
         void OnFavButtonClicked(object? sender, EventArgs e)
@@ -142,16 +150,10 @@ namespace MyAudioPlayer
                 playLists[PlayListTab.SelectedIndex].FavCurrent();
             else
             {   
-                //因为可能会删除当前文件，需要先stop
-                //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
-                var tmpFile = currentFile;
-                var tmpPosition=currentFileReader!.Position;
-                Stop(true);
+                var arg = new MyFileEditEventArgs();
+                OnFileEditBegin(null, arg);
                 playLists[PlayListTab.SelectedIndex].FavCurrent();
-                ReloadCurrentFile();
-                if (currentFile == tmpFile)
-                    currentFileReader.Position = tmpPosition;
-                Play();
+                OnFileEditEnd(null, arg);
             }
         }
         void Stop(bool releaseFileReader=false)
@@ -215,6 +217,7 @@ namespace MyAudioPlayer
                 //下一曲
                 playLists[PlayListTab.SelectedIndex].MoveCurrent(1);
                 ReloadCurrentFile();
+                Play();
             });
         }
         void OnCurrentPlayListChanged(object? sender, EventArgs e)
@@ -236,7 +239,7 @@ namespace MyAudioPlayer
             Config.LoadJson();
             foreach(var pair in Config.playLists)
                 if(pair.Key == typeof(PlayListDLSite).Name)
-                    playLists.Add(new PlayListDLSite(pair.Value));
+                    playLists.Add(new PlayListDLSite(pair.Value, this.OnFileEditBegin, this.OnFileEditEnd));
             PlayListTab.SuspendLayout();
             foreach(var playList in playLists)
             {
