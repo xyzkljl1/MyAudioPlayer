@@ -191,8 +191,18 @@ namespace MyAudioPlayer
             if (currentFileReader == null || currentFileReader.FileName != currentFile!.ToString())
             {
                 Stop(true);
-                currentFileReader = new AudioFileReader(currentFile!.ToString());
-                audioDevice.Init(currentFileReader);
+                try
+                {
+                    currentFileReader = new AudioFileReader(currentFile!.ToString());
+                    audioDevice.Init(currentFileReader);
+                }
+                catch (System.Runtime.InteropServices.COMException e)//因为文件有问题产生的异常？如RJ01045015的限定ボーナス02.mp4
+                {
+                    MessageBox.Show($"Invalid File Cause Exception:{currentFile.FullName}/{e.Message}");
+                    currentFileReader =  null;
+                    currentFile = null;
+                    return;
+                }
             }
             //显示信息
             titleBox.Text = playLists[PlayListTab.SelectedIndex].GetCurrentFileDesc();

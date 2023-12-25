@@ -34,7 +34,7 @@ namespace MyAudioPlayer.PlayList
                 var ext = fileInfo.Extension.ToLower();
                 if (ext == ".wav" || ext == ".wave")
                     type = FileType.WAV;
-                else if (ext == ".mp3" || ext == ".mp4")
+                else if (ext == ".mp3" || ext == ".mp4" || ext==".m4a")
                     type = FileType.MP3;
                 else if (ext == ".flac")
                     type = FileType.FLAC;
