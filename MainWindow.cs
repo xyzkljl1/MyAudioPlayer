@@ -102,23 +102,25 @@ namespace MyAudioPlayer
         }
         void OnFileEditBegin(object? sender, MyFileEditEventArgs e)
         {
-            if (audioDevice.PlaybackState != PlaybackState.Playing)
-                return;
-            //因为可能会删除当前文件，需要先stop
-            //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
-            e.needContinue = true;
-            e.prevFile = currentFile;
-            e.prevPosition = currentFileReader!.Position;
+            if (audioDevice.PlaybackState == PlaybackState.Playing)
+            {
+                //因为可能会删除当前文件，需要先stop
+                //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
+                e.needContinue = true;
+                e.prevFile = currentFile;
+                e.prevPosition = currentFileReader!.Position;
+            }
             Stop(true);
         }
         void OnFileEditEnd(object? sender, MyFileEditEventArgs e)
         {
-            if (!e.needContinue)
-                return;
             ReloadCurrentFile();
-            if (currentFile == e.prevFile)
-                currentFileReader!.Position = e.prevPosition;
-            Play();
+            if (e.needContinue)
+            {
+                if (currentFile == e.prevFile)
+                    currentFileReader!.Position = e.prevPosition;
+                Play();
+            }
         }
         void OnDelButtonClicked(object? sender, EventArgs e)
         {
