@@ -124,7 +124,7 @@ namespace MyAudioPlayer
         }
         void OnDelButtonClicked(object? sender, EventArgs e)
         {
-            if (audioDevice.PlaybackState != PlaybackState.Playing)
+            if (currentFileReader is not null)
                 playLists[PlayListTab.SelectedIndex].DeleteCurrent();
             else
             {
@@ -136,7 +136,7 @@ namespace MyAudioPlayer
         }
         void OnDelPartButtonClicked(object? sender, EventArgs e)
         {
-            if (audioDevice.PlaybackState != PlaybackState.Playing)
+            if (currentFileReader is not null)
                 playLists[PlayListTab.SelectedIndex].DeleteCurrentPart();
             else
             {
@@ -148,7 +148,7 @@ namespace MyAudioPlayer
         }
         void OnFavButtonClicked(object? sender, EventArgs e)
         {
-            if(audioDevice.PlaybackState != PlaybackState.Playing)
+            if (currentFileReader is not null)
                 playLists[PlayListTab.SelectedIndex].FavCurrent();
             else
             {   
