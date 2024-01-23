@@ -205,6 +205,13 @@ namespace MyAudioPlayer
                     currentFile = null;
                     return;
                 }
+                catch (NAudio.MmException e)//也是文件有问题？如RJ01003442
+                {
+                    MessageBox.Show($"Invalid File Cause Exception:{currentFile.FullName}/{e.Message}");
+                    currentFileReader = null;
+                    currentFile = null;
+                    return;
+                }
             }
             //显示信息
             titleBox.Text = playLists[PlayListTab.SelectedIndex].GetCurrentFileDesc();
