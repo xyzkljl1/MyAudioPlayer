@@ -229,6 +229,9 @@ namespace MyAudioPlayer.PlayList
                 {
                     draggedNode.Remove();
                     treeView.Nodes.Insert(targetNode.Index, draggedNode);
+                    var node=(draggedNode.Tag as Node)!;
+                    nodes.Remove(node);
+                    nodes.Insert(targetNode.Index, node);
                 }
                 SaveOrderConfig();
             }
