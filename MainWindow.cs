@@ -248,6 +248,7 @@ namespace MyAudioPlayer
                 foreach (var playList in playLists)
                     playList.UnmountDoubleClickEvent(this.PlayList_DoubleClicked);
                 playLists[currentIndex].MountDoubleClickEvent(this.PlayList_DoubleClicked);
+                DelPartButton.Visible = playLists[currentIndex].needDelPartButton;
                 //暂定：不触发PlayList_SelectedIndexChanged，即继续播放之前的曲目
             }
             else
@@ -256,9 +257,12 @@ namespace MyAudioPlayer
         public void InitPlayListTree()
         {
             Config.LoadJson();
-            foreach(var pair in Config.playLists)
-                if(pair.Key == typeof(PlayListDLSite).Name)
+            foreach (var pair in Config.playLists)
+                if (pair.Key == typeof(PlayListDLSite).Name)
                     playLists.Add(new PlayListDLSite(pair.Value, this.OnFileEditBegin, this.OnFileEditEnd));
+                else if (pair.Key == typeof(PlayListLocalMusic).Name)
+                    playLists.Add(new PlayListLocalMusic(pair.Value, this.OnFileEditBegin, this.OnFileEditEnd));
+
             PlayListTab.SuspendLayout();
             foreach(var playList in playLists)
             {

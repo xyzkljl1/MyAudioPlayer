@@ -17,6 +17,7 @@ namespace MyAudioPlayer.PlayList
     internal abstract class PlayListBase
     {
         public string Title { get; set; } = "";
+        public bool needDelPartButton = true;
         //移动到下N/上N首
         public virtual void MoveCurrent(int offset) { }
         //获取显示list内容的控件

@@ -59,6 +59,7 @@ namespace MyAudioPlayer.PlayList
             public bool loaded = false;//是否已创建子节点
         };
         public static Regex workNameRegex = new Regex("^[RVBJ]{0,2}[0-9]{3,8}");
+        public static Regex seriesNameRegex = new Regex("^S ");
         private TreeView treeView = new TreeView();
         private TreeNode? currentNode = null;//当前(正在播放的)曲目，和Selected不同，双击触发
         private DirectoryInfo rootDir;
@@ -220,7 +221,12 @@ namespace MyAudioPlayer.PlayList
         private void LoadFiles()
         {
             nodes.Clear();
+            if (!rootDir.Exists)
+                rootDir.Create();
             LoadFilesImpl(rootDir);
+            //此函数是在MainWindow构造函数里开子线程调用的，如果load文件过快，此时可能窗口句柄尚未创建，因此要等待
+            while (!treeView.IsHandleCreated) Task.Delay(100);
+            treeView.Invoke(() => this.RefreshMainControl());//编辑控件需要在主线程，借用treeView的invoke
             //TODO:sort
         }
         private void LoadFilesImpl(DirectoryInfo dir)
@@ -248,7 +254,9 @@ namespace MyAudioPlayer.PlayList
             Task.WaitAll(tasks.ToArray());
             foreach (var task in tasks)
                 nodes.Add(task.Result);
-            treeView.Invoke(() =>  this.RefreshMainControl() );//编辑控件需要在主线程，借用treeView的invoke
+            foreach (var dirInfo in dir.GetDirectories())
+                if (seriesNameRegex.IsMatch(dirInfo.Name))
+                    LoadFilesImpl(dirInfo);
         }
         private static Node LoadSingleNodeFromDir(DirectoryInfo dirInfo)
         {
@@ -337,8 +345,11 @@ namespace MyAudioPlayer.PlayList
             var selectedNode = _node;
             if (selectedNode is null)
                 return;
-            if (selectedNode.Tag is Node)//顶级节点
-                return;//防止误删
+            if (selectedNode.Tag is Node)//顶级节点,此时播放的肯定是第一个文件(播放完第一个通过MoveCurrent播放第二个时会选中子节点)，删除第一个
+            {
+                while (selectedNode.Nodes.Count > 0)//
+                    selectedNode = selectedNode.Nodes[0];
+            }
             if (selectedNode.Tag is AFileSet)
             {
                 var fileSet = (selectedNode.Tag as AFileSet)!;
@@ -356,9 +367,12 @@ namespace MyAudioPlayer.PlayList
                     if (IsChildren(currentNode,selectedNode))
                         currentNode = null;
                 }
+                var tmpParent=selectedNode.Parent;//remove之后parent会置空
                 treeView.Nodes.Remove(selectedNode);
                 node.fileSets.Remove(fileSet);//node也要修改否则之后再选中所在节点会出问题
-                foreach(var file in fileSet.files)//删除下面的所有文件，注意不要删除文件夹，因为AFileSet可能在顶级目录
+                if (tmpParent.Nodes.Count <= 0)
+                    treeView.Nodes.Remove(tmpParent);
+                foreach (var file in fileSet.files)//删除下面的所有文件，注意不要删除文件夹，因为AFileSet可能在顶级目录
                     file.fileInfo.Delete();
         }
             else if (selectedNode.Tag is AFile)
@@ -374,8 +388,32 @@ namespace MyAudioPlayer.PlayList
                     if (IsChildren(currentNode, selectedNode))//如果移动后currentNode仍然等于selectedNode(即只有这个叶节点)，清空currentNode
                         currentNode = null;
                 }
+                var tmpParent = selectedNode.Parent;//remove之后parent会置空
                 treeView.Nodes.Remove(selectedNode);
                 fileset.files.Remove(file);//fileset也要修改否则之后再选中所在节点会出问题
+                if (tmpParent.Nodes.Count <= 0)
+                {
+                    var tmptmpParent= tmpParent.Parent;
+                    treeView.Nodes.Remove(tmpParent);
+                    if (tmptmpParent.Nodes.Count <= 0 && tmptmpParent.Tag is Node)
+                    {
+                        try
+                        {
+                            //通知DLSiteHelperServer
+                            string url = $"{dlServer}/?markEliminated{(tmptmpParent.Tag as Node)!.RJ}";
+                            using (HttpResponseMessage response = httpClient.GetAsync(url).Result)
+                            {
+                                if (response.StatusCode != System.Net.HttpStatusCode.OK)
+                                    throw new Exception("DLServer Return non-success");
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine(e.Message);
+                            throw;
+                        }
+                    }
+                }
                 if (fileInfo.Exists)
                     fileInfo.Delete();
             }

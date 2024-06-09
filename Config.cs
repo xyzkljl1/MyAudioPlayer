@@ -14,6 +14,7 @@ namespace MyAudioPlayer
         public static List<KeyValuePair<string, string>> playLists = new List<KeyValuePair<string, string>>();
         public static string DLServerAddress = "";
         public static string DLSiteFavDir = "";
+        public static string MusicFavDir = "";
         public static void LoadJson()
         {
             var path = "config.json";
