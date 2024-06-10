@@ -9,10 +9,10 @@ namespace MyAudioPlayer
 {
     public partial class MainWindow : Form
     {
-        private List<PlayListBase> playLists=new List<PlayListBase>();
+        private List<PlayListBase> playLists = new List<PlayListBase>();
         public static string TreeViewName = "MyTreeView123";
-        public FileInfo? currentFile=null;
-        public WaveOutEvent audioDevice=new WaveOutEvent();
+        public FileInfo? currentFile = null;
+        public WaveOutEvent audioDevice = new WaveOutEvent();
         public AudioFileReader? currentFileReader;
         public bool noTriggerPlayStoppedEvent = false;
         public Timer timer;
@@ -52,9 +52,9 @@ namespace MyAudioPlayer
         void OnPlayTimerTick(object? sender, ElapsedEventArgs e)
         {
             if (currentFile != null)//timer触发的响应不在主线程，需要用invoke
-                this.Invoke(() => 
-                        { 
-                            if(currentFileReader is not null)
+                this.Invoke(() =>
+                        {
+                            if (currentFileReader is not null)
                                 this.playSlider.Value = (int)Math.Floor(currentFileReader.CurrentTime.TotalSeconds);
                         });
         }
@@ -71,12 +71,12 @@ namespace MyAudioPlayer
             if (currentFile is null || currentFileReader is null)
                 return;
             int sec = playSlider.Value;
-            currentFileReader.CurrentTime =new TimeSpan(sec*TimeSpan.TicksPerSecond);
+            currentFileReader.CurrentTime = new TimeSpan(sec * TimeSpan.TicksPerSecond);
         }
         void OnVolumeSliderScrolled(object? sender, EventArgs e)
         {
             //范围0-1
-            audioDevice.Volume = Math.Clamp(volumeSlider.Value/100.0f,.0f,1.0f);
+            audioDevice.Volume = Math.Clamp(volumeSlider.Value / 100.0f, .0f, 1.0f);
         }
         void OnPlayButtonClicked(object? sender, EventArgs e)
         {
@@ -134,7 +134,7 @@ namespace MyAudioPlayer
             else
             {
                 var arg = new MyFileEditEventArgs();
-                OnFileEditBegin(null,arg);
+                OnFileEditBegin(null, arg);
                 playLists[PlayListTab.SelectedIndex].DeleteCurrent();
                 OnFileEditEnd(null, arg);
             }
@@ -156,20 +156,20 @@ namespace MyAudioPlayer
             if (currentFileReader is null)
                 playLists[PlayListTab.SelectedIndex].FavCurrent();
             else
-            {   
+            {
                 var arg = new MyFileEditEventArgs();
                 OnFileEditBegin(null, arg);
                 playLists[PlayListTab.SelectedIndex].FavCurrent();
                 OnFileEditEnd(null, arg);
             }
         }
-        void Stop(bool releaseFileReader=false)
+        void Stop(bool releaseFileReader = false)
         {
             UnmountPlayStopEvent();
             audioDevice.Stop();
             //关闭fileReader会触发playstop事件所以需要放在此处
-            if(releaseFileReader)
-                if(currentFileReader != null)
+            if (releaseFileReader)
+                if (currentFileReader != null)
                 {
                     currentFileReader.Close();
                     currentFileReader.Dispose();
@@ -197,7 +197,7 @@ namespace MyAudioPlayer
             bool playing = audioDevice.PlaybackState == PlaybackState.Playing;
             //从playlist获取当前文件
             currentFile = playLists[PlayListTab.SelectedIndex].GetCurrentFile();
-            if(currentFile == null)
+            if (currentFile == null)
             {
                 Stop(true);
                 titleBox.Text = "None";
@@ -215,7 +215,7 @@ namespace MyAudioPlayer
                 catch (System.Runtime.InteropServices.COMException e)//因为文件有问题产生的异常？如RJ01045015的限定ボーナス02.mp4
                 {
                     MessageBox.Show($"Invalid File Cause Exception:{currentFile.FullName}/{e.Message}");
-                    currentFileReader =  null;
+                    currentFileReader = null;
                     currentFile = null;
                     return;
                 }
@@ -229,8 +229,8 @@ namespace MyAudioPlayer
             }
             //显示信息
             titleBox.Text = playLists[PlayListTab.SelectedIndex].GetCurrentFileDesc();
-            this.playSlider.Minimum= 0;
-            this.playSlider.Maximum=(int)Math.Floor(currentFileReader.TotalTime.TotalSeconds);
+            this.playSlider.Minimum = 0;
+            this.playSlider.Maximum = (int)Math.Floor(currentFileReader.TotalTime.TotalSeconds);
             this.playSlider.Value = (int)Math.Floor(currentFileReader.CurrentTime.TotalSeconds);
             //如果之前在播放则继续播放
             if (playing)
@@ -255,8 +255,8 @@ namespace MyAudioPlayer
         }
         void OnCurrentPlayListChanged(object? sender, EventArgs e)
         {
-            int currentIndex=PlayListTab.SelectedIndex;
-            if(currentIndex>=0&&currentIndex<=playLists.Count)
+            int currentIndex = PlayListTab.SelectedIndex;
+            if (currentIndex >= 0 && currentIndex <= playLists.Count)
             {
                 //令当前选项卡选择曲目时触发该控件响应事件
                 foreach (var playList in playLists)
@@ -278,7 +278,7 @@ namespace MyAudioPlayer
                     playLists.Add(new PlayListLocalMusic(pair.Value, this.OnFileEditBegin, this.OnFileEditEnd));
 
             PlayListTab.SuspendLayout();
-            foreach(var playList in playLists)
+            foreach (var playList in playLists)
             {
                 var tabPage = new TabPage();
                 tabPage.AutoScroll = true;
@@ -293,10 +293,18 @@ namespace MyAudioPlayer
             if (playLists.Count > 0)
             {
                 PlayListTab.SelectTab(0);
-                OnCurrentPlayListChanged(null,new EventArgs());
+                OnCurrentPlayListChanged(null, new EventArgs());
             }
-       }
-
+        }
+        private void SwitchToBar(bool isBar)
+        {
+            UpPanel.Visible = !isBar;
+            //UpPanel.MinimumSize =new Size(0,0);
+            //UpPanel.Dock = DockStyle.None;
+            //UpPanel.Size = new Size(0,0);
+            DownPanel.Visible = !isBar;
+            //this.ControlBox = !isBar;
+        }
         private void PlayList_DoubleClicked(object? sender, TreeNodeMouseClickEventArgs e)
         {
             int currentIndex = PlayListTab.SelectedIndex;
@@ -306,11 +314,30 @@ namespace MyAudioPlayer
             Play();
             this.Refresh();
         }
+
         protected override void OnClosed(EventArgs e)
         {
             timer.Stop();
-            timer.Elapsed-= this.OnPlayTimerTick;//防止关闭窗口后timer还触发事件导致异常
+            timer.Elapsed -= this.OnPlayTimerTick;//防止关闭窗口后timer还触发事件导致异常
             base.OnClosed(e);
+        }
+        private const int WM_SYSCOMMAND = 0x0112;
+        private const int SC_MINIMIZE = 0xf020;
+        private bool isBar = false;
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_SYSCOMMAND)
+            {
+                if (m.WParam.ToInt32() == SC_MINIMIZE)
+                {
+                    m.Result = IntPtr.Zero;
+                    isBar = !isBar;
+                    SwitchToBar(isBar);
+                    return;
+                }
+            }
+            base.WndProc(ref m);
         }
     }
 }
