@@ -28,7 +28,6 @@ namespace MyAudioPlayer
             {
                 PlayListTab.SelectedIndexChanged += this.OnCurrentPlayListChanged;
                 PlayButton.Click += this.OnPlayButtonClicked;
-                PauseButton.Click += this.OnPauseButtonClicked;
                 PrevButton.Click += this.OnPrevButtonClicked;
                 NextButton.Click += this.OnNextButtonClicked;
                 DelButton.Click += this.OnDelButtonClicked;
@@ -63,7 +62,8 @@ namespace MyAudioPlayer
         void OnSliderValueChanged(object? sender, EventArgs e)
         {
             int sec = playSlider.Value;
-            this.sliderLabel.Text = $"{sec / 60}:{(sec % 60).ToString().PadLeft(2, '0')}";
+            int total = playSlider.Maximum;
+            this.sliderLabel.Text = $"{sec / 60}:{(sec % 60).ToString().PadLeft(2, '0')} / {total / 60}:{(total % 60).ToString().PadLeft(2, '0')}";
         }
         //用户拖动进度条结束时，改变播放进度
         void OnSliderScrolled(object? sender, EventArgs e)
@@ -80,7 +80,12 @@ namespace MyAudioPlayer
         }
         void OnPlayButtonClicked(object? sender, EventArgs e)
         {
-            Play();
+            if (currentFile == null)
+                return;
+            if (audioDevice.PlaybackState == PlaybackState.Playing)
+                Pause();
+            else
+                Play();
         }
         void OnPrevButtonClicked(object? sender, EventArgs e)
         {
@@ -177,7 +182,16 @@ namespace MyAudioPlayer
             if (currentFile == null)
                 return;
             audioDevice.Play();
+            if (audioDevice.PlaybackState == PlaybackState.Playing)
+                PlayButton.Text = "Pause";
         }
+        void Pause()
+        {
+            audioDevice.Pause();
+            if (audioDevice.PlaybackState != PlaybackState.Playing)
+                PlayButton.Text = "Play";
+        }
+
         void ReloadCurrentFile()
         {
             bool playing = audioDevice.PlaybackState == PlaybackState.Playing;
@@ -294,7 +308,8 @@ namespace MyAudioPlayer
         }
         protected override void OnClosed(EventArgs e)
         {
-            timer.Stop();//防止关闭窗口后timer还触发事件导致异常
+            timer.Stop();
+            timer.Elapsed-= this.OnPlayTimerTick;//防止关闭窗口后timer还触发事件导致异常
             base.OnClosed(e);
         }
     }
