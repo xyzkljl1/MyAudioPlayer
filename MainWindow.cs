@@ -1,4 +1,4 @@
-using MyAudioPlayer.PlayList;
+ï»¿using MyAudioPlayer.PlayList;
 using System.Text;
 using NAudio;
 using NAudio.Wave;
@@ -16,10 +16,11 @@ namespace MyAudioPlayer
         public AudioFileReader? currentFileReader;
         public bool noTriggerPlayStoppedEvent = false;
         public Timer timer;
+        private Size prevWindowSize;
         public MainWindow()
         {
             InitializeComponent();
-            {//½ø¶ÈÌõtimer
+            {//è¿›åº¦æ¡timer
                 timer = new Timer(300); //milliseconds
                 timer.Enabled = true;
                 timer.AutoReset = true;
@@ -37,7 +38,7 @@ namespace MyAudioPlayer
                 OpenLocalButton.Click += delegate { playLists[PlayListTab.SelectedIndex].OpenLocalSelected(); };
                 OpenWebButton.Click += delegate { playLists[PlayListTab.SelectedIndex].OpenWebSelected(); };
                 playSlider.ValueChanged += OnSliderValueChanged;
-                //·ÀÖ¹ÍÏ¶¯½ø¶ÈÌõÊ±ÖØÉè½ø¶ÈÌõ
+                //é˜²æ­¢æ‹–åŠ¨è¿›åº¦æ¡æ—¶é‡è®¾è¿›åº¦æ¡
                 playSlider.MouseDown += delegate { timer.Enabled = false; };
                 playSlider.MouseUp += delegate { timer.Enabled = true; };
                 playSlider.Scroll += OnSliderScrolled;
@@ -48,24 +49,25 @@ namespace MyAudioPlayer
                 MountPlayStopEvent();
             }
             InitPlayListTree();
+            RefreshPlayButton();
         }
         void OnPlayTimerTick(object? sender, ElapsedEventArgs e)
         {
-            if (currentFile != null)//timer´¥·¢µÄÏìÓ¦²»ÔÚÖ÷Ïß³Ì£¬ÐèÒªÓÃinvoke
+            if (currentFile != null)//timerè§¦å‘çš„å“åº”ä¸åœ¨ä¸»çº¿ç¨‹ï¼Œéœ€è¦ç”¨invoke
                 this.Invoke(() =>
                         {
                             if (currentFileReader is not null)
                                 this.playSlider.Value = (int)Math.Floor(currentFileReader.CurrentTime.TotalSeconds);
                         });
         }
-        //sliderÒòÈÎºÎÔ­Òò²úÉú±ä»¯Ê±£¬ÐÞ¸Älabel
+        //sliderå› ä»»ä½•åŽŸå› äº§ç”Ÿå˜åŒ–æ—¶ï¼Œä¿®æ”¹label
         void OnSliderValueChanged(object? sender, EventArgs e)
         {
             int sec = playSlider.Value;
             int total = playSlider.Maximum;
             this.sliderLabel.Text = $"{sec / 60}:{(sec % 60).ToString().PadLeft(2, '0')} / {total / 60}:{(total % 60).ToString().PadLeft(2, '0')}";
         }
-        //ÓÃ»§ÍÏ¶¯½ø¶ÈÌõ½áÊøÊ±£¬¸Ä±ä²¥·Å½ø¶È
+        //ç”¨æˆ·æ‹–åŠ¨è¿›åº¦æ¡ç»“æŸæ—¶ï¼Œæ”¹å˜æ’­æ”¾è¿›åº¦
         void OnSliderScrolled(object? sender, EventArgs e)
         {
             if (currentFile is null || currentFileReader is null)
@@ -75,7 +77,7 @@ namespace MyAudioPlayer
         }
         void OnVolumeSliderScrolled(object? sender, EventArgs e)
         {
-            //·¶Î§0-1
+            //èŒƒå›´0-1
             audioDevice.Volume = Math.Clamp(volumeSlider.Value / 100.0f, .0f, 1.0f);
         }
         void OnPlayButtonClicked(object? sender, EventArgs e)
@@ -109,8 +111,8 @@ namespace MyAudioPlayer
         {
             if (audioDevice.PlaybackState == PlaybackState.Playing)
             {
-                //ÒòÎª¿ÉÄÜ»áÉ¾³ýµ±Ç°ÎÄ¼þ£¬ÐèÒªÏÈstop
-                //Èç¹ûÖ®Ç°ÕýÔÚ²¥·Å£¬ÇÒÖ´ÐÐÍêºóÈÔÈ»¼ÌÐø²¥·Å£¬Èç¹ûÎÄ¼þÎ´¸Ä±äÔò´ÓÖ®Ç°µÄÎ»ÖÃ¿ªÊ¼²¥·Å
+                //å› ä¸ºå¯èƒ½ä¼šåˆ é™¤å½“å‰æ–‡ä»¶ï¼Œéœ€è¦å…ˆstop
+                //å¦‚æžœä¹‹å‰æ­£åœ¨æ’­æ”¾ï¼Œä¸”æ‰§è¡Œå®ŒåŽä»ç„¶ç»§ç»­æ’­æ”¾ï¼Œå¦‚æžœæ–‡ä»¶æœªæ”¹å˜åˆ™ä»Žä¹‹å‰çš„ä½ç½®å¼€å§‹æ’­æ”¾
                 e.needContinue = true;
                 e.prevFile = currentFile;
                 e.prevPosition = currentFileReader!.Position;
@@ -167,7 +169,7 @@ namespace MyAudioPlayer
         {
             UnmountPlayStopEvent();
             audioDevice.Stop();
-            //¹Ø±ÕfileReader»á´¥·¢playstopÊÂ¼þËùÒÔÐèÒª·ÅÔÚ´Ë´¦
+            //å…³é—­fileReaderä¼šè§¦å‘playstopäº‹ä»¶æ‰€ä»¥éœ€è¦æ”¾åœ¨æ­¤å¤„
             if (releaseFileReader)
                 if (currentFileReader != null)
                 {
@@ -182,20 +184,32 @@ namespace MyAudioPlayer
             if (currentFile == null)
                 return;
             audioDevice.Play();
-            if (audioDevice.PlaybackState == PlaybackState.Playing)
-                PlayButton.Text = "Pause";
+            RefreshPlayButton();
         }
         void Pause()
         {
             audioDevice.Pause();
-            if (audioDevice.PlaybackState != PlaybackState.Playing)
-                PlayButton.Text = "Play";
+            RefreshPlayButton();
+        }
+        void RefreshPlayButton()
+        {
+            //https://stackoverflow.com/questions/22885702/html-for-the-pause-symbol-in-audio-and-video-control
+            if (audioDevice.PlaybackState == PlaybackState.Playing)
+            {
+                PlayButton.Text = "â¸ï¸Ž";
+                //PlayButton.Font = new Font(PlayButton.Font.FontFamily, 14F, FontStyle.Bold);
+            }
+            else
+            {
+                PlayButton.Text = "â–¶";
+                //PlayButton.Font = new Font(PlayButton.Font.FontFamily, 14F, FontStyle.Regular);
+            }
         }
 
         void ReloadCurrentFile()
         {
             bool playing = audioDevice.PlaybackState == PlaybackState.Playing;
-            //´Óplaylist»ñÈ¡µ±Ç°ÎÄ¼þ
+            //ä»ŽplaylistèŽ·å–å½“å‰æ–‡ä»¶
             currentFile = playLists[PlayListTab.SelectedIndex].GetCurrentFile();
             if (currentFile == null)
             {
@@ -203,7 +217,7 @@ namespace MyAudioPlayer
                 titleBox.Text = "None";
                 return;
             }
-            //ÖØÉèdevice
+            //é‡è®¾device
             if (currentFileReader == null || currentFileReader.FileName != currentFile!.ToString())
             {
                 Stop(true);
@@ -212,14 +226,14 @@ namespace MyAudioPlayer
                     currentFileReader = new AudioFileReader(currentFile!.ToString());
                     audioDevice.Init(currentFileReader);
                 }
-                catch (System.Runtime.InteropServices.COMException e)//ÒòÎªÎÄ¼þÓÐÎÊÌâ²úÉúµÄÒì³££¿ÈçRJ01045015µÄÏÞ¶¨¥Ü©`¥Ê¥¹02.mp4
+                catch (System.Runtime.InteropServices.COMException e)//å› ä¸ºæ–‡ä»¶æœ‰é—®é¢˜äº§ç”Ÿçš„å¼‚å¸¸ï¼Ÿå¦‚RJ01045015çš„é™å®šãƒœãƒ¼ãƒŠã‚¹02.mp4
                 {
                     MessageBox.Show($"Invalid File Cause Exception:{currentFile.FullName}/{e.Message}");
                     currentFileReader = null;
                     currentFile = null;
                     return;
                 }
-                catch (NAudio.MmException e)//Ò²ÊÇÎÄ¼þÓÐÎÊÌâ£¿ÈçRJ01003442
+                catch (NAudio.MmException e)//ä¹Ÿæ˜¯æ–‡ä»¶æœ‰é—®é¢˜ï¼Ÿå¦‚RJ01003442
                 {
                     MessageBox.Show($"Invalid File Cause Exception:{currentFile.FullName}/{e.Message}");
                     currentFileReader = null;
@@ -227,12 +241,12 @@ namespace MyAudioPlayer
                     return;
                 }
             }
-            //ÏÔÊ¾ÐÅÏ¢
+            //æ˜¾ç¤ºä¿¡æ¯
             titleBox.Text = playLists[PlayListTab.SelectedIndex].GetCurrentFileDesc();
             this.playSlider.Minimum = 0;
             this.playSlider.Maximum = (int)Math.Floor(currentFileReader.TotalTime.TotalSeconds);
             this.playSlider.Value = (int)Math.Floor(currentFileReader.CurrentTime.TotalSeconds);
-            //Èç¹ûÖ®Ç°ÔÚ²¥·ÅÔò¼ÌÐø²¥·Å
+            //å¦‚æžœä¹‹å‰åœ¨æ’­æ”¾åˆ™ç»§ç»­æ’­æ”¾
             if (playing)
                 Play();
         }
@@ -244,10 +258,10 @@ namespace MyAudioPlayer
         {
             if (noTriggerPlayStoppedEvent)
                 return;
-            //ÓÉaudioDevice´¥·¢£¬²»ÔÚÖ÷Ïß³Ì£¬ÐèÒªÓÃinvoke
+            //ç”±audioDeviceè§¦å‘ï¼Œä¸åœ¨ä¸»çº¿ç¨‹ï¼Œéœ€è¦ç”¨invoke
             this.Invoke(delegate ()
             {
-                //ÏÂÒ»Çú
+                //ä¸‹ä¸€æ›²
                 playLists[PlayListTab.SelectedIndex].MoveCurrent(1);
                 ReloadCurrentFile();
                 Play();
@@ -258,12 +272,12 @@ namespace MyAudioPlayer
             int currentIndex = PlayListTab.SelectedIndex;
             if (currentIndex >= 0 && currentIndex <= playLists.Count)
             {
-                //Áîµ±Ç°Ñ¡Ïî¿¨Ñ¡ÔñÇúÄ¿Ê±´¥·¢¸Ã¿Ø¼þÏìÓ¦ÊÂ¼þ
+                //ä»¤å½“å‰é€‰é¡¹å¡é€‰æ‹©æ›²ç›®æ—¶è§¦å‘è¯¥æŽ§ä»¶å“åº”äº‹ä»¶
                 foreach (var playList in playLists)
                     playList.UnmountDoubleClickEvent(this.PlayList_DoubleClicked);
                 playLists[currentIndex].MountDoubleClickEvent(this.PlayList_DoubleClicked);
                 DelPartButton.Visible = playLists[currentIndex].needDelPartButton;
-                //ÔÝ¶¨£º²»´¥·¢PlayList_SelectedIndexChanged£¬¼´¼ÌÐø²¥·ÅÖ®Ç°µÄÇúÄ¿
+                //æš‚å®šï¼šä¸è§¦å‘PlayList_SelectedIndexChangedï¼Œå³ç»§ç»­æ’­æ”¾ä¹‹å‰çš„æ›²ç›®
             }
             else
                 throw new Exception("Unknown UI Problem");
@@ -284,7 +298,7 @@ namespace MyAudioPlayer
                 tabPage.AutoScroll = true;
                 tabPage.Text = playList.Title;
                 tabPage.BorderStyle = BorderStyle.Fixed3D;
-                //tabpageÀïµÄ¿Ø¼þÓÒ²àµ½tabpageÓÒ±ßÔµ»áÓÐÒ»¶Î¿Õ°×£¬¿í¶ÈÔ¼µÈÓÚtabPage.Width-120£¬½«tabPage.WidthÉèÎª120¹æ±Ü(Ð¡ÓÚ120»áµ¼ÖÂ¹ö¶¯Ìõ±»µ²×¡)£¬ÎªÊ²Ã´»áÕâÑù£¿                
+                //tabpageé‡Œçš„æŽ§ä»¶å³ä¾§åˆ°tabpageå³è¾¹ç¼˜ä¼šæœ‰ä¸€æ®µç©ºç™½ï¼Œå®½åº¦çº¦ç­‰äºŽtabPage.Width-120ï¼Œå°†tabPage.Widthè®¾ä¸º120è§„é¿(å°äºŽ120ä¼šå¯¼è‡´æ»šåŠ¨æ¡è¢«æŒ¡ä½)ï¼Œä¸ºä»€ä¹ˆä¼šè¿™æ ·ï¼Ÿ                
                 tabPage.Width = 120;
                 tabPage.Controls.Add(playList.GetMainControl());
                 PlayListTab.TabPages.Add(tabPage);
@@ -296,14 +310,26 @@ namespace MyAudioPlayer
                 OnCurrentPlayListChanged(null, new EventArgs());
             }
         }
-        private void SwitchToBar(bool isBar)
+        private void SwitchToBar(bool _isBar)
         {
-            UpPanel.Visible = !isBar;
+            UpPanel.Visible = !_isBar;
             //UpPanel.MinimumSize =new Size(0,0);
             //UpPanel.Dock = DockStyle.None;
             //UpPanel.Size = new Size(0,0);
-            DownPanel.Visible = !isBar;
+            DownPanel.Visible = !_isBar;
             //this.ControlBox = !isBar;
+            //flowLayoutå®žåœ¨ç”¨ä¸æ˜Žç™½ï¼Œåªå¥½ç”¨tableLayoutæ‰‹åŠ¨è°ƒè¡Œé«˜äº†
+            mainTableLayoutPanel.RowStyles[0].Height = _isBar?0:190F;
+            //mainTableLayoutPanel.RowStyles[1].Height = 101F;
+            mainTableLayoutPanel.RowStyles[2].Height = _isBar?0:618F;
+            if (_isBar)
+            {
+                prevWindowSize = this.Size;
+                this.Height = 150;
+                this.Width = 950;
+            }
+            else
+                this.Size = prevWindowSize;
         }
         private void PlayList_DoubleClicked(object? sender, TreeNodeMouseClickEventArgs e)
         {
@@ -318,7 +344,7 @@ namespace MyAudioPlayer
         protected override void OnClosed(EventArgs e)
         {
             timer.Stop();
-            timer.Elapsed -= this.OnPlayTimerTick;//·ÀÖ¹¹Ø±Õ´°¿Úºótimer»¹´¥·¢ÊÂ¼þµ¼ÖÂÒì³£
+            timer.Elapsed -= this.OnPlayTimerTick;//é˜²æ­¢å…³é—­çª—å£åŽtimerè¿˜è§¦å‘äº‹ä»¶å¯¼è‡´å¼‚å¸¸
             base.OnClosed(e);
         }
         private const int WM_SYSCOMMAND = 0x0112;

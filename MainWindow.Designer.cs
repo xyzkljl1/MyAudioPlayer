@@ -45,24 +45,24 @@
             OpenLocalButton = new Button();
             volumeSlider = new TrackBar();
             titleBox = new RichTextBox();
-            tableLayoutPanel1 = new TableLayoutPanel();
+            mainTableLayoutPanel = new TableLayoutPanel();
             DownPanel.SuspendLayout();
             MiddlePanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)playSlider).BeginInit();
             UpPanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)volumeSlider).BeginInit();
-            tableLayoutPanel1.SuspendLayout();
+            mainTableLayoutPanel.SuspendLayout();
             SuspendLayout();
             // 
             // DownPanel
             // 
             DownPanel.Controls.Add(PlayListTab);
             DownPanel.Dock = DockStyle.Fill;
-            DownPanel.Location = new Point(4, 378);
+            DownPanel.Location = new Point(4, 295);
             DownPanel.Margin = new Padding(4);
             DownPanel.MinimumSize = new Size(0, 500);
             DownPanel.Name = "DownPanel";
-            DownPanel.Size = new Size(1996, 668);
+            DownPanel.Size = new Size(1178, 701);
             DownPanel.TabIndex = 1;
             // 
             // PlayListTab
@@ -72,7 +72,7 @@
             PlayListTab.Margin = new Padding(4);
             PlayListTab.Name = "PlayListTab";
             PlayListTab.SelectedIndex = 0;
-            PlayListTab.Size = new Size(1996, 668);
+            PlayListTab.Size = new Size(1178, 701);
             PlayListTab.TabIndex = 0;
             // 
             // MiddlePanel
@@ -87,15 +87,15 @@
             MiddlePanel.Controls.Add(DelButton);
             MiddlePanel.Controls.Add(playSlider);
             MiddlePanel.Dock = DockStyle.Fill;
-            MiddlePanel.Location = new Point(3, 235);
+            MiddlePanel.Location = new Point(3, 193);
             MiddlePanel.Name = "MiddlePanel";
-            MiddlePanel.Size = new Size(1998, 136);
+            MiddlePanel.Size = new Size(1180, 95);
             MiddlePanel.TabIndex = 2;
             // 
             // SelectCurrentButton
             // 
             SelectCurrentButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            SelectCurrentButton.Location = new Point(1500, 4);
+            SelectCurrentButton.Location = new Point(682, 4);
             SelectCurrentButton.Margin = new Padding(4);
             SelectCurrentButton.Name = "SelectCurrentButton";
             SelectCurrentButton.Size = new Size(116, 87);
@@ -105,19 +105,22 @@
             // 
             // PrevButton
             // 
-            PrevButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            PrevButton.Location = new Point(147, 8);
+            PrevButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+            PrevButton.FlatAppearance.BorderSize = 0;
+            PrevButton.FlatStyle = FlatStyle.Flat;
+            PrevButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Regular, GraphicsUnit.Point);
+            PrevButton.Location = new Point(92, 4);
             PrevButton.Margin = new Padding(4);
             PrevButton.Name = "PrevButton";
-            PrevButton.Size = new Size(136, 85);
+            PrevButton.Size = new Size(76, 87);
             PrevButton.TabIndex = 3;
-            PrevButton.Text = "Prev";
+            PrevButton.Text = "⏮︎";
             PrevButton.UseVisualStyleBackColor = true;
             // 
             // FavButton
             // 
             FavButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            FavButton.Location = new Point(1624, 4);
+            FavButton.Location = new Point(806, 4);
             FavButton.Margin = new Padding(4);
             FavButton.Name = "FavButton";
             FavButton.Size = new Size(116, 87);
@@ -127,30 +130,39 @@
             // 
             // PlayButton
             // 
-            PlayButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            PlayButton.Location = new Point(4, 8);
+            PlayButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+            PlayButton.FlatAppearance.BorderSize = 0;
+            PlayButton.FlatStyle = FlatStyle.Flat;
+            PlayButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Regular, GraphicsUnit.Point);
+            PlayButton.Location = new Point(4, 4);
             PlayButton.Margin = new Padding(4);
             PlayButton.Name = "PlayButton";
-            PlayButton.Size = new Size(136, 87);
+            PlayButton.Size = new Size(80, 87);
             PlayButton.TabIndex = 1;
-            PlayButton.Text = "Play";
+            PlayButton.Text = "⏸︎";
             PlayButton.UseVisualStyleBackColor = true;
             // 
             // NextButton
             // 
-            NextButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            NextButton.Location = new Point(291, 8);
-            NextButton.Margin = new Padding(4);
+            NextButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+            NextButton.BackColor = Color.Transparent;
+            NextButton.FlatAppearance.BorderSize = 0;
+            NextButton.FlatStyle = FlatStyle.Flat;
+            NextButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Regular, GraphicsUnit.Point);
+            NextButton.Location = new Point(175, 4);
+            NextButton.Margin = new Padding(0);
             NextButton.Name = "NextButton";
-            NextButton.Size = new Size(136, 85);
+            NextButton.Size = new Size(78, 87);
             NextButton.TabIndex = 4;
-            NextButton.Text = "Next";
-            NextButton.UseVisualStyleBackColor = true;
+            NextButton.Text = "⏭︎";
+            NextButton.TextImageRelation = TextImageRelation.TextBeforeImage;
+            NextButton.UseMnemonic = false;
+            NextButton.UseVisualStyleBackColor = false;
             // 
             // DelPartButton
             // 
             DelPartButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            DelPartButton.Location = new Point(1872, 4);
+            DelPartButton.Location = new Point(1054, 4);
             DelPartButton.Margin = new Padding(4);
             DelPartButton.Name = "DelPartButton";
             DelPartButton.Size = new Size(116, 87);
@@ -162,7 +174,7 @@
             // 
             sliderLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             sliderLabel.AutoSize = true;
-            sliderLabel.Location = new Point(1377, 8);
+            sliderLabel.Location = new Point(559, 8);
             sliderLabel.Margin = new Padding(4, 0, 4, 0);
             sliderLabel.Name = "sliderLabel";
             sliderLabel.Size = new Size(115, 28);
@@ -172,7 +184,7 @@
             // DelButton
             // 
             DelButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            DelButton.Location = new Point(1748, 4);
+            DelButton.Location = new Point(930, 4);
             DelButton.Margin = new Padding(4);
             DelButton.Name = "DelButton";
             DelButton.Size = new Size(116, 87);
@@ -182,33 +194,32 @@
             // 
             // playSlider
             // 
-            playSlider.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            playSlider.Location = new Point(435, 13);
+            playSlider.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            playSlider.Location = new Point(257, 15);
             playSlider.Margin = new Padding(4);
             playSlider.Maximum = 0;
             playSlider.Name = "playSlider";
-            playSlider.Size = new Size(934, 80);
+            playSlider.Size = new Size(294, 80);
             playSlider.TabIndex = 7;
             playSlider.TickFrequency = 60;
             // 
             // UpPanel
             // 
-            UpPanel.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             UpPanel.Controls.Add(OpenWebButton);
             UpPanel.Controls.Add(OpenLocalButton);
             UpPanel.Controls.Add(volumeSlider);
             UpPanel.Controls.Add(titleBox);
-            UpPanel.Location = new Point(4, 43);
-            UpPanel.Margin = new Padding(4);
-            UpPanel.MinimumSize = new Size(100, 100);
+            UpPanel.Dock = DockStyle.Fill;
+            UpPanel.Location = new Point(0, 0);
+            UpPanel.Margin = new Padding(0);
             UpPanel.Name = "UpPanel";
-            UpPanel.Size = new Size(1996, 146);
+            UpPanel.Size = new Size(1186, 190);
             UpPanel.TabIndex = 0;
             // 
             // OpenWebButton
             // 
             OpenWebButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            OpenWebButton.Location = new Point(1671, 0);
+            OpenWebButton.Location = new Point(942, 4);
             OpenWebButton.Margin = new Padding(4);
             OpenWebButton.Name = "OpenWebButton";
             OpenWebButton.Size = new Size(116, 84);
@@ -219,7 +230,7 @@
             // OpenLocalButton
             // 
             OpenLocalButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            OpenLocalButton.Location = new Point(1795, 0);
+            OpenLocalButton.Location = new Point(1066, 4);
             OpenLocalButton.Margin = new Padding(4);
             OpenLocalButton.Name = "OpenLocalButton";
             OpenLocalButton.Size = new Size(116, 84);
@@ -230,7 +241,7 @@
             // volumeSlider
             // 
             volumeSlider.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            volumeSlider.Location = new Point(1671, 62);
+            volumeSlider.Location = new Point(934, 104);
             volumeSlider.Margin = new Padding(4);
             volumeSlider.Maximum = 100;
             volumeSlider.Name = "volumeSlider";
@@ -245,34 +256,34 @@
             titleBox.Margin = new Padding(4);
             titleBox.Name = "titleBox";
             titleBox.ReadOnly = true;
-            titleBox.Size = new Size(1727, 126);
+            titleBox.Size = new Size(916, 180);
             titleBox.TabIndex = 0;
             titleBox.Text = "";
             // 
-            // tableLayoutPanel1
+            // mainTableLayoutPanel
             // 
-            tableLayoutPanel1.ColumnCount = 1;
-            tableLayoutPanel1.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            tableLayoutPanel1.Controls.Add(UpPanel, 0, 0);
-            tableLayoutPanel1.Controls.Add(DownPanel, 0, 2);
-            tableLayoutPanel1.Controls.Add(MiddlePanel, 0, 1);
-            tableLayoutPanel1.Dock = DockStyle.Fill;
-            tableLayoutPanel1.Location = new Point(0, 0);
-            tableLayoutPanel1.Margin = new Padding(0);
-            tableLayoutPanel1.Name = "tableLayoutPanel1";
-            tableLayoutPanel1.RowCount = 3;
-            tableLayoutPanel1.RowStyles.Add(new RowStyle(SizeType.Percent, 62.0320854F));
-            tableLayoutPanel1.RowStyles.Add(new RowStyle(SizeType.Percent, 37.9679146F));
-            tableLayoutPanel1.RowStyles.Add(new RowStyle(SizeType.Absolute, 675F));
-            tableLayoutPanel1.Size = new Size(2004, 1050);
-            tableLayoutPanel1.TabIndex = 3;
+            mainTableLayoutPanel.ColumnCount = 1;
+            mainTableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            mainTableLayoutPanel.Controls.Add(UpPanel, 0, 0);
+            mainTableLayoutPanel.Controls.Add(DownPanel, 0, 2);
+            mainTableLayoutPanel.Controls.Add(MiddlePanel, 0, 1);
+            mainTableLayoutPanel.Dock = DockStyle.Fill;
+            mainTableLayoutPanel.Location = new Point(0, 0);
+            mainTableLayoutPanel.Margin = new Padding(0);
+            mainTableLayoutPanel.Name = "mainTableLayoutPanel";
+            mainTableLayoutPanel.RowCount = 3;
+            mainTableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 190F));
+            mainTableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 101F));
+            mainTableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 618F));
+            mainTableLayoutPanel.Size = new Size(1186, 1000);
+            mainTableLayoutPanel.TabIndex = 3;
             // 
             // MainWindow
             // 
             AutoScaleDimensions = new SizeF(13F, 28F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(2004, 1050);
-            Controls.Add(tableLayoutPanel1);
+            ClientSize = new Size(1186, 1000);
+            Controls.Add(mainTableLayoutPanel);
             Margin = new Padding(4);
             Name = "MainWindow";
             Text = "万万静听";
@@ -283,7 +294,7 @@
             UpPanel.ResumeLayout(false);
             UpPanel.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)volumeSlider).EndInit();
-            tableLayoutPanel1.ResumeLayout(false);
+            mainTableLayoutPanel.ResumeLayout(false);
             ResumeLayout(false);
         }
 
@@ -306,6 +317,6 @@
         private Button OpenLocalButton;
         private TrackBar volumeSlider;
         private RichTextBox titleBox;
-        private TableLayoutPanel tableLayoutPanel1;
+        private TableLayoutPanel mainTableLayoutPanel;
     }
 }
