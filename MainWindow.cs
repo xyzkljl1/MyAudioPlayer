@@ -17,6 +17,7 @@ namespace MyAudioPlayer
         public bool noTriggerPlayStoppedEvent = false;
         public Timer timer;
         private Size prevWindowSize;
+        private Point prevLocation;
         public MainWindow()
         {
             InitializeComponent();
@@ -44,6 +45,10 @@ namespace MyAudioPlayer
                 playSlider.Scroll += OnSliderScrolled;
                 volumeSlider.Scroll += OnVolumeSliderScrolled;
                 volumeSlider.Value = 100;
+                toolTip.SetToolTip(this.SelectCurrentButton, "选中正在播放(Current)的条目");
+                toolTip.SetToolTip(this.FavButton, "Fav Current");
+                toolTip.SetToolTip(this.DelButton, "Delete Current");
+                toolTip.SetToolTip(this.FavButton, "Delete Current Part");
             }
             {
                 MountPlayStopEvent();
@@ -276,7 +281,8 @@ namespace MyAudioPlayer
                 foreach (var playList in playLists)
                     playList.UnmountDoubleClickEvent(this.PlayList_DoubleClicked);
                 playLists[currentIndex].MountDoubleClickEvent(this.PlayList_DoubleClicked);
-                DelPartButton.Visible = playLists[currentIndex].needDelPartButton;
+                DelPartButton.Enabled = playLists[currentIndex].needDelPartButton;
+                OpenWebButton.Enabled = playLists[currentIndex].needWebButton;
                 //暂定：不触发PlayList_SelectedIndexChanged，即继续播放之前的曲目
             }
             else
@@ -319,17 +325,33 @@ namespace MyAudioPlayer
             DownPanel.Visible = !_isBar;
             //this.ControlBox = !isBar;
             //flowLayout实在用不明白，只好用tableLayout手动调行高了
-            mainTableLayoutPanel.RowStyles[0].Height = _isBar?0:190F;
+            mainTableLayoutPanel.RowStyles[0].Height = _isBar ? 0 : 190F;
             //mainTableLayoutPanel.RowStyles[1].Height = 101F;
-            mainTableLayoutPanel.RowStyles[2].Height = _isBar?0:618F;
+            mainTableLayoutPanel.RowStyles[2].Height = _isBar ? 0 : 618F;
+
+            foreach (var btn in new List<Button> { PlayButton, PrevButton, NextButton, FavButton, SelectCurrentButton, DelButton, DelPartButton })
+                btn.Font = new Font(btn.Font.FontFamily, isBar ? 12 : 24);
+
+            foreach (var btn in new List<Button> { FavButton, SelectCurrentButton, DelButton, DelPartButton })
+                btn.Width = isBar ? 54:84;
+
+            MiddlePanel.Height = isBar ? 80 : 95;
             if (_isBar)
             {
                 prevWindowSize = this.Size;
-                this.Height = 150;
-                this.Width = 950;
+                prevLocation = this.Location;
+                this.Height = 80;
+                this.Width = 850;
+                this.Location = new Point(0, 0);
+                //this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
+                //this.ControlBox = false;
+                //this.Text = String.Empty;
             }
             else
+            {
+                this.Location = prevLocation;
                 this.Size = prevWindowSize;
+            }
         }
         private void PlayList_DoubleClicked(object? sender, TreeNodeMouseClickEventArgs e)
         {
@@ -338,7 +360,7 @@ namespace MyAudioPlayer
                 return;
             ReloadCurrentFile();
             Play();
-            this.Refresh();
+            Refresh();
         }
 
         protected override void OnClosed(EventArgs e)
@@ -365,5 +387,6 @@ namespace MyAudioPlayer
             }
             base.WndProc(ref m);
         }
+
     }
 }

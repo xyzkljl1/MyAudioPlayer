@@ -28,14 +28,15 @@
         /// </summary>
         private void InitializeComponent()
         {
+            components = new System.ComponentModel.Container();
             DownPanel = new Panel();
             PlayListTab = new TabControl();
             MiddlePanel = new Panel();
-            SelectCurrentButton = new Button();
             PrevButton = new Button();
             FavButton = new Button();
             PlayButton = new Button();
             NextButton = new Button();
+            SelectCurrentButton = new Button();
             DelPartButton = new Button();
             sliderLabel = new Label();
             DelButton = new Button();
@@ -46,6 +47,7 @@
             volumeSlider = new TrackBar();
             titleBox = new RichTextBox();
             mainTableLayoutPanel = new TableLayoutPanel();
+            toolTip = new ToolTip(components);
             DownPanel.SuspendLayout();
             MiddlePanel.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)playSlider).BeginInit();
@@ -62,7 +64,7 @@
             DownPanel.Margin = new Padding(4);
             DownPanel.MinimumSize = new Size(0, 500);
             DownPanel.Name = "DownPanel";
-            DownPanel.Size = new Size(1178, 701);
+            DownPanel.Size = new Size(1069, 701);
             DownPanel.TabIndex = 1;
             // 
             // PlayListTab
@@ -72,36 +74,25 @@
             PlayListTab.Margin = new Padding(4);
             PlayListTab.Name = "PlayListTab";
             PlayListTab.SelectedIndex = 0;
-            PlayListTab.Size = new Size(1178, 701);
+            PlayListTab.Size = new Size(1069, 701);
             PlayListTab.TabIndex = 0;
             // 
             // MiddlePanel
             // 
-            MiddlePanel.Controls.Add(SelectCurrentButton);
+            MiddlePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             MiddlePanel.Controls.Add(PrevButton);
             MiddlePanel.Controls.Add(FavButton);
             MiddlePanel.Controls.Add(PlayButton);
             MiddlePanel.Controls.Add(NextButton);
+            MiddlePanel.Controls.Add(SelectCurrentButton);
             MiddlePanel.Controls.Add(DelPartButton);
             MiddlePanel.Controls.Add(sliderLabel);
             MiddlePanel.Controls.Add(DelButton);
             MiddlePanel.Controls.Add(playSlider);
-            MiddlePanel.Dock = DockStyle.Fill;
             MiddlePanel.Location = new Point(3, 193);
             MiddlePanel.Name = "MiddlePanel";
-            MiddlePanel.Size = new Size(1180, 95);
+            MiddlePanel.Size = new Size(1071, 95);
             MiddlePanel.TabIndex = 2;
-            // 
-            // SelectCurrentButton
-            // 
-            SelectCurrentButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            SelectCurrentButton.Location = new Point(682, 4);
-            SelectCurrentButton.Margin = new Padding(4);
-            SelectCurrentButton.Name = "SelectCurrentButton";
-            SelectCurrentButton.Size = new Size(116, 87);
-            SelectCurrentButton.TabIndex = 13;
-            SelectCurrentButton.Text = "选中播放的曲目";
-            SelectCurrentButton.UseVisualStyleBackColor = true;
             // 
             // PrevButton
             // 
@@ -120,12 +111,14 @@
             // FavButton
             // 
             FavButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            FavButton.Location = new Point(806, 4);
+            FavButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            FavButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Regular, GraphicsUnit.Point);
+            FavButton.Location = new Point(793, 4);
             FavButton.Margin = new Padding(4);
             FavButton.Name = "FavButton";
-            FavButton.Size = new Size(116, 87);
+            FavButton.Size = new Size(84, 87);
             FavButton.TabIndex = 12;
-            FavButton.Text = "FavCur";
+            FavButton.Text = "♥";
             FavButton.UseVisualStyleBackColor = true;
             // 
             // PlayButton
@@ -159,22 +152,37 @@
             NextButton.UseMnemonic = false;
             NextButton.UseVisualStyleBackColor = false;
             // 
+            // SelectCurrentButton
+            // 
+            SelectCurrentButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
+            SelectCurrentButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            SelectCurrentButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Regular, GraphicsUnit.Point);
+            SelectCurrentButton.Location = new Point(701, 4);
+            SelectCurrentButton.Margin = new Padding(4);
+            SelectCurrentButton.Name = "SelectCurrentButton";
+            SelectCurrentButton.Size = new Size(84, 87);
+            SelectCurrentButton.TabIndex = 13;
+            SelectCurrentButton.Text = "→";
+            SelectCurrentButton.UseVisualStyleBackColor = true;
+            // 
             // DelPartButton
             // 
             DelPartButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            DelPartButton.Location = new Point(1054, 4);
+            DelPartButton.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            DelPartButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Underline, GraphicsUnit.Point);
+            DelPartButton.Location = new Point(977, 4);
             DelPartButton.Margin = new Padding(4);
             DelPartButton.Name = "DelPartButton";
-            DelPartButton.Size = new Size(116, 87);
+            DelPartButton.Size = new Size(84, 87);
             DelPartButton.TabIndex = 5;
-            DelPartButton.Text = "DelPartCur";
+            DelPartButton.Text = "␡";
             DelPartButton.UseVisualStyleBackColor = true;
             // 
             // sliderLabel
             // 
             sliderLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             sliderLabel.AutoSize = true;
-            sliderLabel.Location = new Point(559, 8);
+            sliderLabel.Location = new Point(578, 15);
             sliderLabel.Margin = new Padding(4, 0, 4, 0);
             sliderLabel.Name = "sliderLabel";
             sliderLabel.Size = new Size(115, 28);
@@ -184,12 +192,13 @@
             // DelButton
             // 
             DelButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
-            DelButton.Location = new Point(930, 4);
+            DelButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Regular, GraphicsUnit.Point);
+            DelButton.Location = new Point(885, 4);
             DelButton.Margin = new Padding(4);
             DelButton.Name = "DelButton";
-            DelButton.Size = new Size(116, 87);
+            DelButton.Size = new Size(84, 87);
             DelButton.TabIndex = 6;
-            DelButton.Text = "DelCur";
+            DelButton.Text = "␡";
             DelButton.UseVisualStyleBackColor = true;
             // 
             // playSlider
@@ -199,7 +208,7 @@
             playSlider.Margin = new Padding(4);
             playSlider.Maximum = 0;
             playSlider.Name = "playSlider";
-            playSlider.Size = new Size(294, 80);
+            playSlider.Size = new Size(313, 80);
             playSlider.TabIndex = 7;
             playSlider.TickFrequency = 60;
             // 
@@ -213,35 +222,38 @@
             UpPanel.Location = new Point(0, 0);
             UpPanel.Margin = new Padding(0);
             UpPanel.Name = "UpPanel";
-            UpPanel.Size = new Size(1186, 190);
+            UpPanel.Size = new Size(1077, 190);
             UpPanel.TabIndex = 0;
             // 
             // OpenWebButton
             // 
             OpenWebButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            OpenWebButton.Location = new Point(942, 4);
+            OpenWebButton.Font = new Font("Malgun Gothic Semilight", 24F, FontStyle.Regular, GraphicsUnit.Point);
+            OpenWebButton.Location = new Point(797, 4);
             OpenWebButton.Margin = new Padding(4);
             OpenWebButton.Name = "OpenWebButton";
             OpenWebButton.Size = new Size(116, 84);
             OpenWebButton.TabIndex = 11;
-            OpenWebButton.Text = "Web";
+            OpenWebButton.Text = "🌐";
             OpenWebButton.UseVisualStyleBackColor = true;
             // 
             // OpenLocalButton
             // 
             OpenLocalButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            OpenLocalButton.Location = new Point(1066, 4);
+            OpenLocalButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Regular, GraphicsUnit.Point);
+            OpenLocalButton.Location = new Point(921, 4);
             OpenLocalButton.Margin = new Padding(4);
             OpenLocalButton.Name = "OpenLocalButton";
             OpenLocalButton.Size = new Size(116, 84);
             OpenLocalButton.TabIndex = 10;
-            OpenLocalButton.Text = "Local";
+            OpenLocalButton.Text = "📁";
+            OpenLocalButton.TextAlign = ContentAlignment.MiddleRight;
             OpenLocalButton.UseVisualStyleBackColor = true;
             // 
             // volumeSlider
             // 
             volumeSlider.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            volumeSlider.Location = new Point(934, 104);
+            volumeSlider.Location = new Point(789, 104);
             volumeSlider.Margin = new Padding(4);
             volumeSlider.Maximum = 100;
             volumeSlider.Name = "volumeSlider";
@@ -256,7 +268,7 @@
             titleBox.Margin = new Padding(4);
             titleBox.Name = "titleBox";
             titleBox.ReadOnly = true;
-            titleBox.Size = new Size(916, 180);
+            titleBox.Size = new Size(771, 180);
             titleBox.TabIndex = 0;
             titleBox.Text = "";
             // 
@@ -275,14 +287,14 @@
             mainTableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 190F));
             mainTableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 101F));
             mainTableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 618F));
-            mainTableLayoutPanel.Size = new Size(1186, 1000);
+            mainTableLayoutPanel.Size = new Size(1077, 1000);
             mainTableLayoutPanel.TabIndex = 3;
             // 
             // MainWindow
             // 
             AutoScaleDimensions = new SizeF(13F, 28F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1186, 1000);
+            ClientSize = new Size(1077, 1000);
             Controls.Add(mainTableLayoutPanel);
             Margin = new Padding(4);
             Name = "MainWindow";
@@ -318,5 +330,6 @@
         private TrackBar volumeSlider;
         private RichTextBox titleBox;
         private TableLayoutPanel mainTableLayoutPanel;
+        private ToolTip toolTip;
     }
 }

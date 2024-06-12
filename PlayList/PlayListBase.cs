@@ -18,6 +18,7 @@ namespace MyAudioPlayer.PlayList
     {
         public string Title { get; set; } = "";
         public bool needDelPartButton = true;
+        public bool needWebButton = true;
         //移动到下N/上N首
         public virtual void MoveCurrent(int offset) { }
         //获取显示list内容的控件

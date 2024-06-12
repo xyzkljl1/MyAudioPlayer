@@ -50,6 +50,7 @@ namespace MyAudioPlayer.PlayList
         public PlayListLocalMusic(string _rootDir, MyFileEditEventHandler _begin, MyFileEditEventHandler _end)
         {
             needDelPartButton=false;
+            needWebButton=false;
             rootDir = new DirectoryInfo(_rootDir);
             favDir = new DirectoryInfo(Config.MusicFavDir);
             Title = rootDir.Name;
