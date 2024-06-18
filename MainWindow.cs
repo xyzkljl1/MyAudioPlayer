@@ -333,7 +333,10 @@ namespace MyAudioPlayer
                 btn.Font = new Font(btn.Font.FontFamily, isBar ? 12 : 24);
 
             foreach (var btn in new List<Button> { FavButton, SelectCurrentButton, DelButton, DelPartButton })
-                btn.Width = isBar ? 54:84;
+            {
+                btn.Width = isBar ? 54 : 84;
+                btn.Height = isBar ? 54 : 87;
+            }
 
             MiddlePanel.Height = isBar ? 80 : 95;
             if (_isBar)
