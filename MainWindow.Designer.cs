@@ -37,10 +37,10 @@
             DelButton = new Button();
             FavButton = new Button();
             SelectCurrentButton = new Button();
+            sliderLabel = new Label();
             PrevButton = new Button();
             PlayButton = new Button();
             NextButton = new Button();
-            sliderLabel = new Label();
             playSlider = new TrackBar();
             UpPanel = new Panel();
             OpenWebButton = new Button();
@@ -66,7 +66,7 @@
             DownPanel.Margin = new Padding(4);
             DownPanel.MinimumSize = new Size(0, 500);
             DownPanel.Name = "DownPanel";
-            DownPanel.Size = new Size(1163, 701);
+            DownPanel.Size = new Size(1365, 701);
             DownPanel.TabIndex = 1;
             // 
             // PlayListTab
@@ -76,12 +76,13 @@
             PlayListTab.Margin = new Padding(4);
             PlayListTab.Name = "PlayListTab";
             PlayListTab.SelectedIndex = 0;
-            PlayListTab.Size = new Size(1163, 701);
+            PlayListTab.Size = new Size(1365, 701);
             PlayListTab.TabIndex = 0;
             // 
             // MiddlePanel
             // 
             MiddlePanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            MiddlePanel.CausesValidation = false;
             MiddlePanel.Controls.Add(MiddlePanelFlowLayoutPanel);
             MiddlePanel.Controls.Add(PrevButton);
             MiddlePanel.Controls.Add(PlayButton);
@@ -89,8 +90,10 @@
             MiddlePanel.Controls.Add(playSlider);
             MiddlePanel.Location = new Point(3, 193);
             MiddlePanel.Name = "MiddlePanel";
-            MiddlePanel.Size = new Size(1165, 95);
+            MiddlePanel.Size = new Size(1367, 95);
             MiddlePanel.TabIndex = 2;
+            MiddlePanel.DoubleClick += onMainWindowMouseDoubleClick;
+            MiddlePanel.MouseDown += onMainWindowMouseDown;
             // 
             // MiddlePanelFlowLayoutPanel
             // 
@@ -103,12 +106,14 @@
             MiddlePanelFlowLayoutPanel.Controls.Add(SelectCurrentButton);
             MiddlePanelFlowLayoutPanel.Controls.Add(sliderLabel);
             MiddlePanelFlowLayoutPanel.FlowDirection = FlowDirection.RightToLeft;
-            MiddlePanelFlowLayoutPanel.Location = new Point(668, 0);
+            MiddlePanelFlowLayoutPanel.Location = new Point(870, 3);
             MiddlePanelFlowLayoutPanel.Margin = new Padding(0);
             MiddlePanelFlowLayoutPanel.Name = "MiddlePanelFlowLayoutPanel";
             MiddlePanelFlowLayoutPanel.Size = new Size(491, 95);
             MiddlePanelFlowLayoutPanel.TabIndex = 14;
             MiddlePanelFlowLayoutPanel.WrapContents = false;
+            MiddlePanelFlowLayoutPanel.DoubleClick += onMainWindowMouseDoubleClick;
+            MiddlePanelFlowLayoutPanel.MouseDown += onMainWindowMouseDown;
             // 
             // DelPartButton
             // 
@@ -160,6 +165,17 @@
             SelectCurrentButton.Text = "→";
             SelectCurrentButton.UseVisualStyleBackColor = true;
             // 
+            // sliderLabel
+            // 
+            sliderLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            sliderLabel.AutoSize = true;
+            sliderLabel.Location = new Point(4, 0);
+            sliderLabel.Margin = new Padding(4, 0, 4, 0);
+            sliderLabel.Name = "sliderLabel";
+            sliderLabel.Size = new Size(115, 28);
+            sliderLabel.TabIndex = 9;
+            sliderLabel.Text = "0:00/00:00";
+            // 
             // PrevButton
             // 
             PrevButton.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
@@ -205,17 +221,6 @@
             NextButton.UseMnemonic = false;
             NextButton.UseVisualStyleBackColor = false;
             // 
-            // sliderLabel
-            // 
-            sliderLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            sliderLabel.AutoSize = true;
-            sliderLabel.Location = new Point(4, 0);
-            sliderLabel.Margin = new Padding(4, 0, 4, 0);
-            sliderLabel.Name = "sliderLabel";
-            sliderLabel.Size = new Size(115, 28);
-            sliderLabel.TabIndex = 9;
-            sliderLabel.Text = "0:00/00:00";
-            // 
             // playSlider
             // 
             playSlider.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -223,7 +228,7 @@
             playSlider.Margin = new Padding(4);
             playSlider.Maximum = 0;
             playSlider.Name = "playSlider";
-            playSlider.Size = new Size(406, 80);
+            playSlider.Size = new Size(609, 80);
             playSlider.TabIndex = 7;
             playSlider.TickFrequency = 60;
             // 
@@ -237,14 +242,14 @@
             UpPanel.Location = new Point(0, 0);
             UpPanel.Margin = new Padding(0);
             UpPanel.Name = "UpPanel";
-            UpPanel.Size = new Size(1171, 190);
+            UpPanel.Size = new Size(1373, 190);
             UpPanel.TabIndex = 0;
             // 
             // OpenWebButton
             // 
             OpenWebButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             OpenWebButton.Font = new Font("Malgun Gothic Semilight", 24F, FontStyle.Regular, GraphicsUnit.Point);
-            OpenWebButton.Location = new Point(891, 4);
+            OpenWebButton.Location = new Point(1121, 4);
             OpenWebButton.Margin = new Padding(4);
             OpenWebButton.Name = "OpenWebButton";
             OpenWebButton.Size = new Size(116, 84);
@@ -256,7 +261,7 @@
             // 
             OpenLocalButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             OpenLocalButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Regular, GraphicsUnit.Point);
-            OpenLocalButton.Location = new Point(1015, 4);
+            OpenLocalButton.Location = new Point(1244, 4);
             OpenLocalButton.Margin = new Padding(4);
             OpenLocalButton.Name = "OpenLocalButton";
             OpenLocalButton.Size = new Size(116, 84);
@@ -268,7 +273,7 @@
             // volumeSlider
             // 
             volumeSlider.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            volumeSlider.Location = new Point(883, 104);
+            volumeSlider.Location = new Point(1121, 104);
             volumeSlider.Margin = new Padding(4);
             volumeSlider.Maximum = 100;
             volumeSlider.Name = "volumeSlider";
@@ -283,12 +288,13 @@
             titleBox.Margin = new Padding(4);
             titleBox.Name = "titleBox";
             titleBox.ReadOnly = true;
-            titleBox.Size = new Size(865, 180);
+            titleBox.Size = new Size(1103, 180);
             titleBox.TabIndex = 0;
             titleBox.Text = "";
             // 
             // mainTableLayoutPanel
             // 
+            mainTableLayoutPanel.AutoSize = true;
             mainTableLayoutPanel.ColumnCount = 1;
             mainTableLayoutPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             mainTableLayoutPanel.Controls.Add(UpPanel, 0, 0);
@@ -302,18 +308,20 @@
             mainTableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 190F));
             mainTableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 101F));
             mainTableLayoutPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 618F));
-            mainTableLayoutPanel.Size = new Size(1171, 1000);
+            mainTableLayoutPanel.Size = new Size(1373, 1000);
             mainTableLayoutPanel.TabIndex = 3;
             // 
             // MainWindow
             // 
             AutoScaleDimensions = new SizeF(13F, 28F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(1171, 1000);
+            ClientSize = new Size(1373, 1000);
             Controls.Add(mainTableLayoutPanel);
             Margin = new Padding(4);
             Name = "MainWindow";
             Text = "万万静听";
+            DoubleClick += onMainWindowMouseDoubleClick;
+            MouseDown += onMainWindowMouseDown;
             DownPanel.ResumeLayout(false);
             MiddlePanel.ResumeLayout(false);
             MiddlePanel.PerformLayout();
@@ -325,6 +333,7 @@
             ((System.ComponentModel.ISupportInitialize)volumeSlider).EndInit();
             mainTableLayoutPanel.ResumeLayout(false);
             ResumeLayout(false);
+            PerformLayout();
         }
 
         #endregion

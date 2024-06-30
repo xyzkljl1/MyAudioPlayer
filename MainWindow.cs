@@ -4,6 +4,7 @@ using NAudio;
 using NAudio.Wave;
 using Timer = System.Timers.Timer;
 using System.Timers;
+using System.Runtime.InteropServices;
 
 namespace MyAudioPlayer
 {
@@ -316,18 +317,19 @@ namespace MyAudioPlayer
                 OnCurrentPlayListChanged(null, new EventArgs());
             }
         }
-        private void SwitchToBar(bool _isBar)
+        private void SwitchToBar(bool _toBar)
         {
-            UpPanel.Visible = !_isBar;
+            isBar = _toBar;
+            UpPanel.Visible = !isBar;
             //UpPanel.MinimumSize =new Size(0,0);
             //UpPanel.Dock = DockStyle.None;
             //UpPanel.Size = new Size(0,0);
-            DownPanel.Visible = !_isBar;
+            DownPanel.Visible = !isBar;
             //this.ControlBox = !isBar;
             //flowLayout实在用不明白，只好用tableLayout手动调行高了
-            mainTableLayoutPanel.RowStyles[0].Height = _isBar ? 0 : 190F;
+            mainTableLayoutPanel.RowStyles[0].Height = isBar ? 0 : 190F;
             //mainTableLayoutPanel.RowStyles[1].Height = 101F;
-            mainTableLayoutPanel.RowStyles[2].Height = _isBar ? 0 : 618F;
+            mainTableLayoutPanel.RowStyles[2].Height = isBar ? 0 : 618F;
 
             foreach (var btn in new List<Button> { PlayButton, PrevButton, NextButton, FavButton, SelectCurrentButton, DelButton, DelPartButton })
                 btn.Font = new Font(btn.Font.FontFamily, isBar ? 12 : 24);
@@ -339,16 +341,16 @@ namespace MyAudioPlayer
             }
 
             MiddlePanel.Height = isBar ? 80 : 95;
-            if (_isBar)
+            this.FormBorderStyle = isBar ? System.Windows.Forms.FormBorderStyle.None : System.Windows.Forms.FormBorderStyle.Sizable;
+            this.ControlBox = !isBar;
+            this.Text = isBar ? String.Empty : "万万静听";
+            if (_toBar)
             {
                 prevWindowSize = this.Size;
                 prevLocation = this.Location;
                 this.Height = 80;
                 this.Width = 850;
-                this.Location = new Point(0, 0);
-                //this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.None;
-                //this.ControlBox = false;
-                //this.Text = String.Empty;
+                this.Location = new Point((Screen.PrimaryScreen.Bounds.Width-this.Width)/2, 0);
             }
             else
             {
@@ -374,6 +376,8 @@ namespace MyAudioPlayer
         }
         private const int WM_SYSCOMMAND = 0x0112;
         private const int SC_MINIMIZE = 0xf020;
+        private const int SC_MOVE = 0xf010;
+        private const int HTCAPTION = 0x0002;
         private bool isBar = false;
 
         protected override void WndProc(ref Message m)
@@ -383,13 +387,31 @@ namespace MyAudioPlayer
                 if (m.WParam.ToInt32() == SC_MINIMIZE)
                 {
                     m.Result = IntPtr.Zero;
-                    isBar = !isBar;
-                    SwitchToBar(isBar);
+                    SwitchToBar(!isBar);
                     return;
                 }
             }
             base.WndProc(ref m);
         }
+        [DllImport("user32.dll")]
+        public static extern bool ReleaseCapture();
+        [DllImport("user32.dll")]
+        public static extern bool SendMessage(IntPtr hwnd, int wMsg, int wParam, int lParam);
 
+        //应该令所有panel忽略鼠标事件传给parent，但是不知道怎么实现
+        //目前是把MiddlePanel、MiddlePanelFlowLayoutPanel、MainWindow的鼠标事件全挂在同一个函数上
+        private void onMainWindowMouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left && e.Clicks == 1)//double click也会先触发mousedown,需要判断是否是单击左键
+            {
+                ReleaseCapture();
+                SendMessage(this.Handle, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
+            }
+        }
+
+        private void onMainWindowMouseDoubleClick(object sender, EventArgs e)
+        {
+            SwitchToBar(!isBar);
+        }
     }
 }
