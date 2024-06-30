@@ -33,6 +33,7 @@
             PlayListTab = new TabControl();
             MiddlePanel = new Panel();
             MiddlePanelFlowLayoutPanel = new FlowLayoutPanel();
+            LockCheckBox = new CheckBox();
             DelPartButton = new Button();
             DelButton = new Button();
             FavButton = new Button();
@@ -100,20 +101,36 @@
             MiddlePanelFlowLayoutPanel.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right;
             MiddlePanelFlowLayoutPanel.AutoSize = true;
             MiddlePanelFlowLayoutPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            MiddlePanelFlowLayoutPanel.Controls.Add(LockCheckBox);
             MiddlePanelFlowLayoutPanel.Controls.Add(DelPartButton);
             MiddlePanelFlowLayoutPanel.Controls.Add(DelButton);
             MiddlePanelFlowLayoutPanel.Controls.Add(FavButton);
             MiddlePanelFlowLayoutPanel.Controls.Add(SelectCurrentButton);
             MiddlePanelFlowLayoutPanel.Controls.Add(sliderLabel);
             MiddlePanelFlowLayoutPanel.FlowDirection = FlowDirection.RightToLeft;
-            MiddlePanelFlowLayoutPanel.Location = new Point(870, 3);
+            MiddlePanelFlowLayoutPanel.Location = new Point(802, 3);
             MiddlePanelFlowLayoutPanel.Margin = new Padding(0);
             MiddlePanelFlowLayoutPanel.Name = "MiddlePanelFlowLayoutPanel";
-            MiddlePanelFlowLayoutPanel.Size = new Size(491, 95);
+            MiddlePanelFlowLayoutPanel.Size = new Size(559, 95);
             MiddlePanelFlowLayoutPanel.TabIndex = 14;
             MiddlePanelFlowLayoutPanel.WrapContents = false;
             MiddlePanelFlowLayoutPanel.DoubleClick += onMainWindowMouseDoubleClick;
             MiddlePanelFlowLayoutPanel.MouseDown += onMainWindowMouseDown;
+            // 
+            // LockCheckBox
+            // 
+            LockCheckBox.AutoSize = true;
+            LockCheckBox.Checked = true;
+            LockCheckBox.CheckState = CheckState.Checked;
+            LockCheckBox.Dock = DockStyle.Fill;
+            LockCheckBox.Location = new Point(494, 3);
+            LockCheckBox.Name = "LockCheckBox";
+            LockCheckBox.Size = new Size(62, 89);
+            LockCheckBox.TabIndex = 14;
+            LockCheckBox.Text = "🔒";
+            LockCheckBox.UseVisualStyleBackColor = true;
+            LockCheckBox.Visible = false;
+            LockCheckBox.CheckedChanged += onLockChanged;
             // 
             // DelPartButton
             // 
@@ -223,12 +240,11 @@
             // 
             // playSlider
             // 
-            playSlider.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             playSlider.Location = new Point(257, 4);
             playSlider.Margin = new Padding(4);
             playSlider.Maximum = 0;
             playSlider.Name = "playSlider";
-            playSlider.Size = new Size(609, 80);
+            playSlider.Size = new Size(541, 80);
             playSlider.TabIndex = 7;
             playSlider.TickFrequency = 60;
             // 
@@ -322,6 +338,7 @@
             Text = "万万静听";
             DoubleClick += onMainWindowMouseDoubleClick;
             MouseDown += onMainWindowMouseDown;
+            Move += onMainWindowMove;
             DownPanel.ResumeLayout(false);
             MiddlePanel.ResumeLayout(false);
             MiddlePanel.PerformLayout();
@@ -358,5 +375,6 @@
         private TableLayoutPanel mainTableLayoutPanel;
         private ToolTip toolTip;
         private FlowLayoutPanel MiddlePanelFlowLayoutPanel;
+        private CheckBox LockCheckBox;
     }
 }

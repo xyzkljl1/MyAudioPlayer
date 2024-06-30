@@ -344,13 +344,15 @@ namespace MyAudioPlayer
             this.FormBorderStyle = isBar ? System.Windows.Forms.FormBorderStyle.None : System.Windows.Forms.FormBorderStyle.Sizable;
             this.ControlBox = !isBar;
             this.Text = isBar ? String.Empty : "万万静听";
+            this.LockCheckBox.Visible = isBar;
+            this.TopMost = isBar ? LockCheckBox.Checked : false;
             if (_toBar)
             {
                 prevWindowSize = this.Size;
                 prevLocation = this.Location;
                 this.Height = 80;
                 this.Width = 850;
-                this.Location = new Point((Screen.PrimaryScreen.Bounds.Width-this.Width)/2, 0);
+                this.Location = new Point((Screen.PrimaryScreen.Bounds.Width - this.Width) / 2, 0);
             }
             else
             {
@@ -412,6 +414,18 @@ namespace MyAudioPlayer
         private void onMainWindowMouseDoubleClick(object sender, EventArgs e)
         {
             SwitchToBar(!isBar);
+        }
+
+        private void onMainWindowMove(object sender, EventArgs e)
+        {
+            //会闪烁，如何解决？
+            if (isBar)
+                this.Location = new Point(this.Location.X, 0);
+        }
+
+        private void onLockChanged(object sender, EventArgs e)
+        {
+            this.TopMost = isBar ? LockCheckBox.Checked : false;
         }
     }
 }
