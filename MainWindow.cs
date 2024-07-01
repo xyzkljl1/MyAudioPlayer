@@ -320,6 +320,8 @@ namespace MyAudioPlayer
         private void SwitchToBar(bool _toBar)
         {
             isBar = _toBar;
+            this.SuspendLayout();
+
             UpPanel.Visible = !isBar;
             //UpPanel.MinimumSize =new Size(0,0);
             //UpPanel.Dock = DockStyle.None;
@@ -343,7 +345,8 @@ namespace MyAudioPlayer
             MiddlePanel.Height = isBar ? 80 : 95;
             this.FormBorderStyle = isBar ? System.Windows.Forms.FormBorderStyle.None : System.Windows.Forms.FormBorderStyle.Sizable;
             this.ControlBox = !isBar;
-            this.Text = isBar ? String.Empty : "万万静听";
+            //控件多(加载列表里的文件后)时set Text会耗费很长时间，why？？？？？？
+            //this.Text = isBar ? String.Empty : "万万静听";
             this.LockCheckBox.Visible = isBar;
             this.TopMost = isBar ? LockCheckBox.Checked : false;
             if (_toBar)
@@ -359,6 +362,7 @@ namespace MyAudioPlayer
                 this.Location = prevLocation;
                 this.Size = prevWindowSize;
             }
+            ResumeLayout();
         }
         private void PlayList_DoubleClicked(object? sender, TreeNodeMouseClickEventArgs e)
         {
