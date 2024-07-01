@@ -229,7 +229,9 @@ namespace MyAudioPlayer
                 Stop(true);
                 try
                 {
+
                     currentFileReader = new AudioFileReader(currentFile!.ToString());
+                    //audioDevice.Init(new MediaFoundationReader(currentFile!.ToString()));
                     audioDevice.Init(currentFileReader);
                 }
                 catch (System.Runtime.InteropServices.COMException e)//因为文件有问题产生的异常？如RJ01045015的限定ボーナス02.mp4
@@ -237,6 +239,7 @@ namespace MyAudioPlayer
                     MessageBox.Show($"Invalid File Cause Exception:{currentFile.FullName}/{e.Message}");
                     currentFileReader = null;
                     currentFile = null;
+                    
                     return;
                 }
                 catch (NAudio.MmException e)//也是文件有问题？如RJ01003442

@@ -225,7 +225,7 @@ namespace MyAudioPlayer.PlayList
                 rootDir.Create();
             LoadFilesImpl(rootDir);
             //此函数是在MainWindow构造函数里开子线程调用的，如果load文件过快，此时可能窗口句柄尚未创建，因此要等待
-            while (!treeView.IsHandleCreated) Task.Delay(100);
+            while (!treeView.IsHandleCreated) Task.Delay(100).Wait();
             treeView.Invoke(() => this.RefreshMainControl());//编辑控件需要在主线程，借用treeView的invoke
             //TODO:sort
         }
