@@ -9,3 +9,4 @@
 *.user
 /bin/Release/net6.0-windows
 /.vs/ProjectEvaluation
+/bin/x64/Debug/net6.0-windows
