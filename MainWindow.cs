@@ -1,24 +1,23 @@
 ﻿using MyAudioPlayer.PlayList;
 using System.Text;
-using NAudio;
-using NAudio.Wave;
 using Timer = System.Timers.Timer;
 using System.Timers;
 using System.Runtime.InteropServices;
+using MyAudioPlayer.Player;
 
 namespace MyAudioPlayer
 {
     public partial class MainWindow : Form
     {
         private List<PlayListBase> playLists = new List<PlayListBase>();
-        public static string TreeViewName = "MyTreeView123";
-        public FileInfo? currentFile = null;
-        public WaveOutEvent audioDevice = new WaveOutEvent();
-        public AudioFileReader? currentFileReader;
         public bool noTriggerPlayStoppedEvent = false;
         public Timer timer;
         private Size prevWindowSize;
         private Point prevLocation;
+        //If necessary:创建多个player，根据文件格式选择使用哪个
+        //private ManagedBassPlayer BassPlayer=new ManagedBassPlayer();
+        private BasePlayer CurrentPlayer=new ManagedBassPlayer();
+
         public MainWindow()
         {
             InitializeComponent();
@@ -59,12 +58,8 @@ namespace MyAudioPlayer
         }
         void OnPlayTimerTick(object? sender, ElapsedEventArgs e)
         {
-            if (currentFile != null)//timer触发的响应不在主线程，需要用invoke
-                this.Invoke(() =>
-                        {
-                            if (currentFileReader is not null)
-                                this.playSlider.Value = (int)Math.Floor(currentFileReader.CurrentTime.TotalSeconds);
-                        });
+            if (CurrentPlayer.IsLoaded())//timer触发的响应不在主线程，需要用invoke
+                this.Invoke(() =>this.playSlider.Value = CurrentPlayer.GetCurrentPositionSec());
         }
         //slider因任何原因产生变化时，修改label
         void OnSliderValueChanged(object? sender, EventArgs e)
@@ -76,21 +71,21 @@ namespace MyAudioPlayer
         //用户拖动进度条结束时，改变播放进度
         void OnSliderScrolled(object? sender, EventArgs e)
         {
-            if (currentFile is null || currentFileReader is null)
+            if (!CurrentPlayer.IsLoaded())
                 return;
             int sec = playSlider.Value;
-            currentFileReader.CurrentTime = new TimeSpan(sec * TimeSpan.TicksPerSecond);
+            CurrentPlayer.SetCurrentPositionSec(sec);
         }
         void OnVolumeSliderScrolled(object? sender, EventArgs e)
         {
             //范围0-1
-            audioDevice.Volume = Math.Clamp(volumeSlider.Value / 100.0f, .0f, 1.0f);
+            CurrentPlayer.SetVolume(Math.Clamp(volumeSlider.Value / 100.0f, .0f, 1.0f));
         }
         void OnPlayButtonClicked(object? sender, EventArgs e)
         {
-            if (currentFile == null)
+            if (!CurrentPlayer.IsLoaded())
                 return;
-            if (audioDevice.PlaybackState == PlaybackState.Playing)
+            if (CurrentPlayer.IsPlaying())
                 Pause();
             else
                 Play();
@@ -107,37 +102,27 @@ namespace MyAudioPlayer
         }
         void UnmountPlayStopEvent()
         {
-            audioDevice.PlaybackStopped -= this.OnPlayStopped;
+            CurrentPlayer.PlayStopped -= this.OnPlayStopped;
         }
         void MountPlayStopEvent()
         {
-            audioDevice.PlaybackStopped += this.OnPlayStopped;
+            CurrentPlayer.PlayStopped += this.OnPlayStopped;
         }
         void OnFileEditBegin(object? sender, MyFileEditEventArgs e)
         {
-            if (audioDevice.PlaybackState == PlaybackState.Playing)
-            {
-                //因为可能会删除当前文件，需要先stop
-                //如果之前正在播放，且执行完后仍然继续播放，如果文件未改变则从之前的位置开始播放
+            //ManagedBass不锁文件，不需要stop
+            if (CurrentPlayer.IsPlaying())
                 e.needContinue = true;
-                e.prevFile = currentFile;
-                e.prevPosition = currentFileReader!.Position;
-            }
-            Stop(true);
         }
         void OnFileEditEnd(object? sender, MyFileEditEventArgs e)
         {
             ReloadCurrentFile();
             if (e.needContinue)
-            {
-                if (currentFile == e.prevFile)
-                    currentFileReader!.Position = e.prevPosition;
                 Play();
-            }
         }
         void OnDelButtonClicked(object? sender, EventArgs e)
         {
-            if (currentFileReader is null)
+            if (!CurrentPlayer.IsLoaded())
                 playLists[PlayListTab.SelectedIndex].DeleteCurrent();
             else
             {
@@ -149,7 +134,7 @@ namespace MyAudioPlayer
         }
         void OnDelPartButtonClicked(object? sender, EventArgs e)
         {
-            if (currentFileReader is null)
+            if (!CurrentPlayer.IsLoaded())
                 playLists[PlayListTab.SelectedIndex].DeleteCurrentPart();
             else
             {
@@ -161,7 +146,7 @@ namespace MyAudioPlayer
         }
         void OnFavButtonClicked(object? sender, EventArgs e)
         {
-            if (currentFileReader is null)
+            if (!CurrentPlayer.IsLoaded())
                 playLists[PlayListTab.SelectedIndex].FavCurrent();
             else
             {
@@ -171,36 +156,26 @@ namespace MyAudioPlayer
                 OnFileEditEnd(null, arg);
             }
         }
-        void Stop(bool releaseFileReader = false)
+        void Stop()
         {
             UnmountPlayStopEvent();
-            audioDevice.Stop();
-            //关闭fileReader会触发playstop事件所以需要放在此处
-            if (releaseFileReader)
-                if (currentFileReader != null)
-                {
-                    currentFileReader.Close();
-                    currentFileReader.Dispose();
-                    currentFileReader = null;
-                }
+            CurrentPlayer.Stop();
             MountPlayStopEvent();
         }
         void Play()
         {
-            if (currentFile == null)
-                return;
-            audioDevice.Play();
+            CurrentPlayer.Play();
             RefreshPlayButton();
         }
         void Pause()
         {
-            audioDevice.Pause();
+            CurrentPlayer.Pause();
             RefreshPlayButton();
         }
         void RefreshPlayButton()
         {
             //https://stackoverflow.com/questions/22885702/html-for-the-pause-symbol-in-audio-and-video-control
-            if (audioDevice.PlaybackState == PlaybackState.Playing)
+            if (CurrentPlayer.IsPlaying())
             {
                 PlayButton.Text = "⏸︎";
                 //PlayButton.Font = new Font(PlayButton.Font.FontFamily, 14F, FontStyle.Bold);
@@ -214,54 +189,40 @@ namespace MyAudioPlayer
 
         void ReloadCurrentFile()
         {
-            bool playing = audioDevice.PlaybackState == PlaybackState.Playing;
+            bool playing = CurrentPlayer.IsPlaying();
             //从playlist获取当前文件
-            currentFile = playLists[PlayListTab.SelectedIndex].GetCurrentFile();
+            var currentFile = playLists[PlayListTab.SelectedIndex].GetCurrentFile();
             if (currentFile == null)
             {
-                Stop(true);
+                Stop();
                 titleBox.Text = "None";
                 return;
             }
-            //重设device
-            if (currentFileReader == null || currentFileReader.FileName != currentFile!.ToString())
+            if (currentFile!=CurrentPlayer.CurrentFile)
             {
-                Stop(true);
+                Stop();
                 try
                 {
-
-                    currentFileReader = new AudioFileReader(currentFile!.ToString());
-                    //audioDevice.Init(new MediaFoundationReader(currentFile!.ToString()));
-                    audioDevice.Init(currentFileReader);
+                    CurrentPlayer.Reload(currentFile);
                 }
-                catch (System.Runtime.InteropServices.COMException e)//因为文件有问题产生的异常？如RJ01045015的限定ボーナス02.mp4
+                catch (Exception e)//也是文件有问题？如RJ01003442
                 {
                     MessageBox.Show($"Invalid File Cause Exception:{currentFile.FullName}/{e.Message}");
-                    currentFileReader = null;
-                    currentFile = null;
-                    
-                    return;
-                }
-                catch (NAudio.MmException e)//也是文件有问题？如RJ01003442
-                {
-                    MessageBox.Show($"Invalid File Cause Exception:{currentFile.FullName}/{e.Message}");
-                    currentFileReader = null;
-                    currentFile = null;
                     return;
                 }
             }
             //显示信息
             titleBox.Text = playLists[PlayListTab.SelectedIndex].GetCurrentFileDesc();
             this.playSlider.Minimum = 0;
-            this.playSlider.Maximum = (int)Math.Floor(currentFileReader.TotalTime.TotalSeconds);
-            this.playSlider.Value = (int)Math.Floor(currentFileReader.CurrentTime.TotalSeconds);
+            this.playSlider.Maximum = CurrentPlayer.GetTotalLengthSec();
+            this.playSlider.Value = CurrentPlayer.GetCurrentPositionSec();
             //如果之前在播放则继续播放
             if (playing)
                 Play();
         }
         void OnPauseButtonClicked(object? sender, EventArgs e)
         {
-            audioDevice.Pause();
+            CurrentPlayer.Pause();
         }
         void OnPlayStopped(object? sender, EventArgs e)
         {
@@ -395,9 +356,9 @@ namespace MyAudioPlayer
             {
                 if (m.WParam.ToInt32() == SC_MINIMIZE)
                 {
-                    m.Result = IntPtr.Zero;
-                    SwitchToBar(!isBar);
-                    return;
+                    //m.Result = IntPtr.Zero;
+                    //SwitchToBar(!isBar);
+                    //return;
                 }
             }
             base.WndProc(ref m);
