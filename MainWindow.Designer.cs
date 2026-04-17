@@ -29,6 +29,7 @@
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainWindow));
             DownPanel = new Panel();
             PlayListTab = new TabControl();
             MiddlePanel = new Panel();
@@ -108,10 +109,10 @@
             MiddlePanelFlowLayoutPanel.Controls.Add(SelectCurrentButton);
             MiddlePanelFlowLayoutPanel.Controls.Add(sliderLabel);
             MiddlePanelFlowLayoutPanel.FlowDirection = FlowDirection.RightToLeft;
-            MiddlePanelFlowLayoutPanel.Location = new Point(802, 3);
+            MiddlePanelFlowLayoutPanel.Location = new Point(797, 3);
             MiddlePanelFlowLayoutPanel.Margin = new Padding(0);
             MiddlePanelFlowLayoutPanel.Name = "MiddlePanelFlowLayoutPanel";
-            MiddlePanelFlowLayoutPanel.Size = new Size(559, 95);
+            MiddlePanelFlowLayoutPanel.Size = new Size(564, 95);
             MiddlePanelFlowLayoutPanel.TabIndex = 14;
             MiddlePanelFlowLayoutPanel.WrapContents = false;
             MiddlePanelFlowLayoutPanel.DoubleClick += onMainWindowMouseDoubleClick;
@@ -125,7 +126,7 @@
             LockCheckBox.Dock = DockStyle.Fill;
             LockCheckBox.Location = new Point(494, 3);
             LockCheckBox.Name = "LockCheckBox";
-            LockCheckBox.Size = new Size(62, 89);
+            LockCheckBox.Size = new Size(67, 89);
             LockCheckBox.TabIndex = 14;
             LockCheckBox.Text = "🔒";
             LockCheckBox.UseVisualStyleBackColor = true;
@@ -333,6 +334,7 @@
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1373, 1000);
             Controls.Add(mainTableLayoutPanel);
+            Icon = (Icon)resources.GetObject("$this.Icon");
             Margin = new Padding(4);
             Name = "MainWindow";
             Text = "万万静听";
