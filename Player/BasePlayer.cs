@@ -19,6 +19,10 @@ namespace MyAudioPlayer.Player
         public abstract void SetVolume(float volume);
         public abstract float GetVolume();
         public abstract void Stop();
+        public virtual void Shutdown()
+        {
+            Stop();
+        }
         public abstract void SetCurrentPositionSec(int seconds);
         //seconds
         public abstract int GetCurrentPositionSec();

@@ -20,7 +20,7 @@ namespace MyAudioPlayer.Player
         }
         //理论上所有操作都会在channel非法时抛出异常,暂不处理        
         int channel = 0;
-        byte[] buffer;
+        byte[] buffer = Array.Empty<byte>();
         public override void Play()
         {
             if (channel != InvalidChannel)
@@ -52,7 +52,20 @@ namespace MyAudioPlayer.Player
         public override void Stop()
         {
             CurrentFile = null;
-            Bass.ChannelStop(channel);
+            if (channel != InvalidChannel)
+                Bass.ChannelStop(channel);
+        }
+        public override void Shutdown()
+        {
+            if (channel != InvalidChannel)
+            {
+                Bass.ChannelStop(channel);
+                Bass.StreamFree(channel);
+                channel = InvalidChannel;
+            }
+            CurrentFile = null;
+            buffer = Array.Empty<byte>();
+            Bass.Free();
         }
         public override void SetCurrentPositionSec(int seconds)
         {

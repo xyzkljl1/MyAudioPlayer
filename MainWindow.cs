@@ -338,11 +338,14 @@ namespace MyAudioPlayer
             Refresh();
         }
 
-        protected override void OnClosed(EventArgs e)
+        protected override void OnFormClosing(FormClosingEventArgs e)
         {
             timer.Stop();
             timer.Elapsed -= this.OnPlayTimerTick;//防止关闭窗口后timer还触发事件导致异常
-            base.OnClosed(e);
+            noTriggerPlayStoppedEvent = true;
+            UnmountPlayStopEvent();
+            CurrentPlayer.Shutdown();
+            base.OnFormClosing(e);
         }
         private const int WM_SYSCOMMAND = 0x0112;
         private const int SC_MINIMIZE = 0xf020;
