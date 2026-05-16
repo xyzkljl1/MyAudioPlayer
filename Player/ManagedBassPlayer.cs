@@ -21,6 +21,7 @@ namespace MyAudioPlayer.Player
         //理论上所有操作都会在channel非法时抛出异常,暂不处理        
         int channel = 0;
         byte[] buffer = Array.Empty<byte>();
+        float volume = 1.0f;
         public override void Play()
         {
             if (channel != InvalidChannel)
@@ -104,14 +105,22 @@ namespace MyAudioPlayer.Player
             var result = Bass.ChannelSetSync(channel, SyncFlags.End, 0, OnStop);
             if (result==0)
                 throw new Exception($"ManagedBass Can't Set Stop Event:{filename}/Err:{ManagedBass.Bass.LastError}");
+            ApplyVolumeToChannel();
         }
         public override void SetVolume(float volume)
         {
-            Bass.Volume = (double)volume;
+            this.volume = Math.Clamp(volume, .0f, 1.0f);
+            ApplyVolumeToChannel();
         }
         public override float GetVolume()
         {
-            return (float)Bass.Volume;
+            return volume;
+        }
+        void ApplyVolumeToChannel()
+        {
+            if (channel == InvalidChannel)
+                return;
+            Bass.ChannelSetAttribute(channel, ChannelAttribute.Volume, volume);
         }
 
     }
