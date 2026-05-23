@@ -171,6 +171,14 @@ namespace MyAudioPlayer.PlayList
             }
             this.currentNode = nextNode;
         }
+
+        public override void MoveToFirst()
+        {
+            if (treeView.Nodes.Count == 0)
+                return;
+            currentNode = treeView.Nodes[0];
+        }
+
         public void RefreshMainControl()
         {
             treeView.SuspendLayout();
@@ -352,6 +360,15 @@ namespace MyAudioPlayer.PlayList
             desc += node.title + "\n";
             return desc;
         }
+
+        public override string GetCurrentMiniTitle()
+        {
+            var curNode = currentNode;
+            if (curNode?.Tag is not Node node)
+                return "";
+            return $"{node.title} / {Title}";
+        }
+
         public override void OpenLocalSelected()
         {
             var selectedNode = treeView.SelectedNode;

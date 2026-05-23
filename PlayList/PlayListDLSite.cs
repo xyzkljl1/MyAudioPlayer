@@ -328,6 +328,13 @@ namespace MyAudioPlayer.PlayList
                 MoveCurrentPrevious();
         }
 
+        public override void MoveToFirst()
+        {
+            if (nodes.Count == 0)
+                return;
+            SetCurrentToWork(0);
+        }
+
         public void RefreshMainControl()
         {
             RebuildVisibleItems();
@@ -989,6 +996,26 @@ namespace MyAudioPlayer.PlayList
             desc += file.title + "\n";
             desc += GetFileDetail(file.fileInfo);
             return desc;
+        }
+
+        public override string GetCurrentMiniTitle()
+        {
+            if (!IsValidWorkIndex(currentWorkIndex))
+                return "";
+            if (!EnsureWorkLoaded(currentWorkIndex))
+                return "";
+
+            var node = nodes[currentWorkIndex];
+            if (TryResolveCurrentFileIndexes(node, out var fileSetIndex, out var fileIndex))
+            {
+                var fileSet = node.fileSets[fileSetIndex];
+                return string.Join(
+                    " / ",
+                    new[] { fileSet.files[fileIndex].title, fileSet.title, node.title }
+                        .Where(part => !string.IsNullOrWhiteSpace(part)));
+            }
+
+            return node.title;
         }
 
         public override void OpenLocalSelected()

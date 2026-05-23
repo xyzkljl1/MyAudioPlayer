@@ -15,17 +15,20 @@ namespace MyAudioPlayer
         private List<PlayListBase> playLists = new List<PlayListBase>();
         public bool noTriggerPlayStoppedEvent = false;
         public Timer timer;
-        private Size prevWindowSize;
-        private Point prevLocation;
         //If necessary:创建多个player，根据文件格式选择使用哪个
         //private ManagedBassPlayer BassPlayer=new ManagedBassPlayer();
         private BasePlayer CurrentPlayer=new ManagedBassPlayer();
         private const int NormalIconSize = 46;
-        private const int CompactIconSize = 31;
         private PlayerTheme currentTheme = PlayerThemes.Resolve(PlayerThemes.DefaultId);
         private readonly ContextMenuStrip themeMenuStrip = new ContextMenuStrip();
         private readonly Dictionary<Button, ButtonVisualStyle> buttonStyles = new Dictionary<Button, ButtonVisualStyle>();
         private readonly HashSet<Button> styledButtons = new HashSet<Button>();
+        private MiniPlayerForm? miniPlayer;
+        private bool isMiniMode;
+        private Rectangle normalBoundsBeforeMini;
+        private FormWindowState normalWindowStateBeforeMini;
+        private bool normalTopMostBeforeMini;
+        private bool hasPlacedMiniPlayer;
 
         private sealed class ButtonVisualStyle
         {
@@ -90,6 +93,7 @@ namespace MyAudioPlayer
                 toolTip.SetToolTip(this.OpenWebButton, "打开网页");
                 toolTip.SetToolTip(this.OpenLocalButton, "打开本地文件夹");
             }
+            MountMiniModeInteractions();
             {
                 MountPlayStopEvent();
             }
@@ -99,7 +103,11 @@ namespace MyAudioPlayer
         void OnPlayTimerTick(object? sender, ElapsedEventArgs e)
         {
             if (CurrentPlayer.IsLoaded())//timer触发的响应不在主线程，需要用invoke
-                this.Invoke(() =>this.playSlider.Value = CurrentPlayer.GetCurrentPositionSec());
+                this.Invoke(() =>
+                {
+                    this.playSlider.Value = CurrentPlayer.GetCurrentPositionSec();
+                    SyncMiniPlayer();
+                });
         }
         //slider因任何原因产生变化时，修改label
         void OnSliderValueChanged(object? sender, EventArgs e)
@@ -107,19 +115,28 @@ namespace MyAudioPlayer
             int sec = playSlider.Value;
             int total = playSlider.Maximum;
             this.sliderLabel.Text = $"{sec / 60}:{(sec % 60).ToString().PadLeft(2, '0')} / {total / 60}:{(total % 60).ToString().PadLeft(2, '0')}";
+            SyncMiniPlayer();
         }
         //用户拖动进度条结束时，改变播放进度
         void OnSliderScrolled(object? sender, EventArgs e)
         {
-            if (!CurrentPlayer.IsLoaded())
-                return;
-            int sec = playSlider.Value;
-            CurrentPlayer.SetCurrentPositionSec(sec);
+            SeekTo(playSlider.Value);
         }
         void OnVolumeSliderScrolled(object? sender, EventArgs e)
         {
             //范围0-1
             CurrentPlayer.SetVolume(Math.Clamp(volumeSlider.Value / 100.0f, .0f, 1.0f));
+        }
+
+        private void SeekTo(int sec)
+        {
+            if (!CurrentPlayer.IsLoaded())
+                return;
+
+            int nextPosition = Math.Clamp(sec, playSlider.Minimum, playSlider.Maximum);
+            CurrentPlayer.SetCurrentPositionSec(nextPosition);
+            playSlider.Value = nextPosition;
+            SyncMiniPlayer();
         }
         void OnPlayButtonClicked(object? sender, EventArgs e)
         {
@@ -132,13 +149,28 @@ namespace MyAudioPlayer
         }
         void OnPrevButtonClicked(object? sender, EventArgs e)
         {
-            playLists[PlayListTab.SelectedIndex].MoveCurrent(-1);
-            ReloadCurrentFile();
+            MoveOrStartCurrentPlayList(-1);
         }
         void OnNextButtonClicked(object? sender, EventArgs e)
         {
-            playLists[PlayListTab.SelectedIndex].MoveCurrent(1);
+            MoveOrStartCurrentPlayList(1);
+        }
+
+        private void MoveOrStartCurrentPlayList(int offset)
+        {
+            int currentIndex = PlayListTab.SelectedIndex;
+            if (currentIndex < 0 || currentIndex >= playLists.Count)
+                return;
+
+            var playList = playLists[currentIndex];
+            bool shouldStartPlayback = !CurrentPlayer.IsLoaded();
+            if (shouldStartPlayback)
+                playList.MoveToFirst();
+            else
+                playList.MoveCurrent(offset);
             ReloadCurrentFile();
+            if (shouldStartPlayback && CurrentPlayer.IsLoaded())
+                Play();
         }
         void UnmountPlayStopEvent()
         {
@@ -213,6 +245,108 @@ namespace MyAudioPlayer
             RefreshPlayButton();
         }
 
+        private void MountMiniModeInteractions()
+        {
+            UpPanel.DoubleClick += onMainWindowMouseDoubleClick;
+            titleBox.DoubleClick += onMainWindowMouseDoubleClick;
+        }
+
+        private MiniPlayerForm GetMiniPlayer()
+        {
+            if (miniPlayer != null && !miniPlayer.IsDisposed)
+                return miniPlayer;
+
+            var player = new MiniPlayerForm(currentTheme)
+            {
+                Icon = Icon
+            };
+            player.PlayPauseClicked += OnPlayButtonClicked;
+            player.PreviousClicked += OnPrevButtonClicked;
+            player.NextClicked += OnNextButtonClicked;
+            player.FavoriteClicked += OnFavButtonClicked;
+            player.DeleteClicked += OnDelButtonClicked;
+            player.DeletePartClicked += OnDelPartButtonClicked;
+            player.RestoreRequested += delegate { RestoreFromMiniMode(); };
+            player.SeekStarted += delegate { timer.Enabled = false; };
+            player.SeekEnded += delegate { timer.Enabled = true; };
+            player.SeekRequested += delegate { SeekTo(player.SeekPositionSec); };
+            miniPlayer = player;
+            return player;
+        }
+
+        private void EnterMiniMode()
+        {
+            if (isMiniMode)
+                return;
+
+            var player = GetMiniPlayer();
+            normalWindowStateBeforeMini = WindowState;
+            normalBoundsBeforeMini = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            normalTopMostBeforeMini = TopMost;
+            isMiniMode = true;
+
+            player.TopMost = true;
+            player.ApplyTheme(currentTheme);
+            SyncMiniPlayer();
+            if (!hasPlacedMiniPlayer)
+            {
+                player.PlaceNearTop(Screen.FromControl(this));
+                hasPlacedMiniPlayer = true;
+            }
+            player.Show();
+            player.Activate();
+            Hide();
+        }
+
+        private void RestoreFromMiniMode()
+        {
+            if (!isMiniMode)
+                return;
+
+            isMiniMode = false;
+            miniPlayer?.Hide();
+            Show();
+            WindowState = FormWindowState.Normal;
+            if (normalBoundsBeforeMini.Width > 0 && normalBoundsBeforeMini.Height > 0)
+                Bounds = normalBoundsBeforeMini;
+            TopMost = normalTopMostBeforeMini;
+            if (normalWindowStateBeforeMini != FormWindowState.Minimized)
+                WindowState = normalWindowStateBeforeMini;
+            Activate();
+        }
+
+        private void SyncMiniPlayer()
+        {
+            if (miniPlayer == null || miniPlayer.IsDisposed)
+                return;
+
+            miniPlayer.UpdatePlayback(
+                GetCurrentMiniTitle(),
+                playSlider.Value,
+                playSlider.Maximum,
+                CurrentPlayer.IsLoaded(),
+                IsCurrentPlayListDelPartEnabled(),
+                CurrentPlayer.IsPlaying());
+        }
+
+        private string GetCurrentMiniTitle()
+        {
+            int currentIndex = PlayListTab.SelectedIndex;
+            if (currentIndex < 0 || currentIndex >= playLists.Count)
+                return titleBox.Text;
+
+            var title = playLists[currentIndex].GetCurrentMiniTitle();
+            return string.IsNullOrWhiteSpace(title) ? titleBox.Text : title;
+        }
+
+        private bool IsCurrentPlayListDelPartEnabled()
+        {
+            int currentIndex = PlayListTab.SelectedIndex;
+            return currentIndex >= 0
+                && currentIndex < playLists.Count
+                && playLists[currentIndex].needDelPartButton;
+        }
+
         private void MountThemeMenu()
         {
             ThemeButton.Click += OnThemeButtonClicked;
@@ -267,6 +401,7 @@ namespace MyAudioPlayer
             PlayListTab.ApplyTheme(theme);
             titleBox.BackColor = theme.TitleBackColor;
             titleBox.ForeColor = theme.TextColor;
+            titleBox.Font = new Font("Microsoft YaHei UI", 10.5F, FontStyle.Regular, GraphicsUnit.Point);
             titleBox.BorderStyle = BorderStyle.FixedSingle;
             sliderLabel.ForeColor = theme.MutedTextColor;
             sliderLabel.BackColor = theme.WindowBackColor;
@@ -287,7 +422,9 @@ namespace MyAudioPlayer
             ApplyThemeToChildControls(DownPanel);
             ApplyThemeToPlayLists();
             ApplyNativeTitleBarTheme();
+            miniPlayer?.ApplyTheme(theme);
             UpdateButtonIcons();
+            SyncMiniPlayer();
             PlayListTab.Invalidate();
             Refresh();
         }
@@ -377,7 +514,7 @@ namespace MyAudioPlayer
             int sliderLeft = NextButton.Right + 12;
             int sliderRight = MiddlePanelFlowLayoutPanel.Left - 12;
             int sliderWidth = Math.Max(90, sliderRight - sliderLeft);
-            int sliderHeight = isBar ? 40 : 54;
+            int sliderHeight = 54;
             playSlider.Bounds = new Rectangle(
                 sliderLeft,
                 Math.Max(4, (MiddlePanel.Height - sliderHeight) / 2),
@@ -415,7 +552,7 @@ namespace MyAudioPlayer
 
         private void UpdateButtonIcons()
         {
-            int size = isBar ? CompactIconSize : NormalIconSize;
+            int size = NormalIconSize;
             SetButtonIcon(PrevButton, ButtonIconKind.Previous, currentTheme.ButtonIconColor, size);
             SetButtonIcon(NextButton, ButtonIconKind.Next, currentTheme.ButtonIconColor, size);
             SetButtonIcon(FavButton, ButtonIconKind.Favorite, currentTheme.FavoriteColor, size);
@@ -522,7 +659,8 @@ namespace MyAudioPlayer
         void RefreshPlayButton()
         {
             var icon = CurrentPlayer.IsPlaying() ? ButtonIconKind.Pause : ButtonIconKind.Play;
-            SetButtonIcon(PlayButton, icon, currentTheme.AccentIconColor, isBar ? CompactIconSize : NormalIconSize);
+            SetButtonIcon(PlayButton, icon, currentTheme.AccentIconColor, NormalIconSize);
+            SyncMiniPlayer();
         }
 
         void ReloadCurrentFile()
@@ -534,6 +672,9 @@ namespace MyAudioPlayer
             {
                 Stop();
                 titleBox.Text = "None";
+                playSlider.Value = 0;
+                playSlider.Maximum = 0;
+                SyncMiniPlayer();
                 return;
             }
             if (currentFile!=CurrentPlayer.CurrentFile)
@@ -554,6 +695,7 @@ namespace MyAudioPlayer
             this.playSlider.Minimum = 0;
             this.playSlider.Maximum = CurrentPlayer.GetTotalLengthSec();
             this.playSlider.Value = CurrentPlayer.GetCurrentPositionSec();
+            SyncMiniPlayer();
             //如果之前在播放则继续播放
             if (playing)
                 Play();
@@ -626,55 +768,6 @@ namespace MyAudioPlayer
             ApplyThemeToChildControls(DownPanel);
             PlayListTab.Invalidate();
         }
-        private void SwitchToBar(bool _toBar)
-        {
-            isBar = _toBar;
-            this.SuspendLayout();
-
-            UpPanel.Visible = !isBar;
-            //UpPanel.MinimumSize =new Size(0,0);
-            //UpPanel.Dock = DockStyle.None;
-            //UpPanel.Size = new Size(0,0);
-            DownPanel.Visible = !isBar;
-            //this.ControlBox = !isBar;
-            //flowLayout实在用不明白，只好用tableLayout手动调行高了
-            mainTableLayoutPanel.RowStyles[0].Height = isBar ? 0 : 190F;
-            //mainTableLayoutPanel.RowStyles[1].Height = 101F;
-            mainTableLayoutPanel.RowStyles[2].Height = isBar ? 0 : 618F;
-
-            foreach (var btn in new List<Button> { PlayButton, PrevButton, NextButton, FavButton, SelectCurrentButton, DelButton, DelPartButton })
-                btn.Font = new Font(btn.Font.FontFamily, isBar ? 12 : 24);
-
-            foreach (var btn in new List<Button> { FavButton, SelectCurrentButton, DelButton, DelPartButton })
-            {
-                btn.Width = isBar ? 54 : 84;
-                btn.Height = isBar ? 54 : 87;
-            }
-            UpdateButtonIcons();
-
-            MiddlePanel.Height = isBar ? 80 : 95;
-            this.FormBorderStyle = isBar ? System.Windows.Forms.FormBorderStyle.None : System.Windows.Forms.FormBorderStyle.Sizable;
-            this.ControlBox = !isBar;
-            //控件多(加载列表里的文件后)时set Text会耗费很长时间，why？？？？？？
-            //this.Text = isBar ? String.Empty : "万万静听";
-            this.LockCheckBox.Visible = isBar;
-            this.TopMost = isBar ? LockCheckBox.Checked : false;
-            if (_toBar)
-            {
-                prevWindowSize = this.Size;
-                prevLocation = this.Location;
-                this.Height = 80;
-                this.Width = 850;
-                this.Location = new Point((Screen.PrimaryScreen.Bounds.Width - this.Width) / 2, 0);
-            }
-            else
-            {
-                this.Location = prevLocation;
-                this.Size = prevWindowSize;
-            }
-            ResumeLayout();
-            LayoutPlaybackControls();
-        }
         private void PlayList_DoubleClicked(object? sender, TreeNodeMouseClickEventArgs e)
         {
             int currentIndex = PlayListTab.SelectedIndex;
@@ -691,6 +784,11 @@ namespace MyAudioPlayer
             timer.Elapsed -= this.OnPlayTimerTick;//防止关闭窗口后timer还触发事件导致异常
             noTriggerPlayStoppedEvent = true;
             UnmountPlayStopEvent();
+            if (miniPlayer != null && !miniPlayer.IsDisposed)
+            {
+                miniPlayer.AllowClose();
+                miniPlayer.Close();
+            }
             CurrentPlayer.Shutdown();
             base.OnFormClosing(e);
         }
@@ -702,26 +800,22 @@ namespace MyAudioPlayer
         }
 
         private const int WM_SYSCOMMAND = 0x0112;
-        private const int SC_MINIMIZE = 0xf020;
         private const int SC_MOVE = 0xf010;
         private const int HTCAPTION = 0x0002;
+        private const int WM_NCLBUTTONDBLCLK = 0x00A3;
         private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
         private const int DWMWA_BORDER_COLOR = 34;
         private const int DWMWA_CAPTION_COLOR = 35;
         private const int DWMWA_TEXT_COLOR = 36;
-        private bool isBar = false;
 
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == WM_SYSCOMMAND)
+            if (m.Msg == WM_NCLBUTTONDBLCLK && m.WParam.ToInt32() == HTCAPTION)
             {
-                if (m.WParam.ToInt32() == SC_MINIMIZE)
-                {
-                    //m.Result = IntPtr.Zero;
-                    //SwitchToBar(!isBar);
-                    //return;
-                }
+                EnterMiniMode();
+                return;
             }
+
             base.WndProc(ref m);
         }
         [DllImport("user32.dll")]
@@ -762,7 +856,7 @@ namespace MyAudioPlayer
 
         //应该令所有panel忽略鼠标事件传给parent，但是不知道怎么实现
         //目前是把MiddlePanel、MiddlePanelFlowLayoutPanel、MainWindow的鼠标事件全挂在同一个函数上
-        private void onMainWindowMouseDown(object sender, MouseEventArgs e)
+        private void onMainWindowMouseDown(object? sender, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Left && e.Clicks == 1)//double click也会先触发mousedown,需要判断是否是单击左键
             {
@@ -771,21 +865,17 @@ namespace MyAudioPlayer
             }
         }
 
-        private void onMainWindowMouseDoubleClick(object sender, EventArgs e)
+        private void onMainWindowMouseDoubleClick(object? sender, EventArgs e)
         {
-            SwitchToBar(!isBar);
+            EnterMiniMode();
         }
 
-        private void onMainWindowMove(object sender, EventArgs e)
+        private void onMainWindowMove(object? sender, EventArgs e)
         {
-            //会闪烁，如何解决？
-            if (isBar)
-                this.Location = new Point(this.Location.X, 0);
         }
 
-        private void onLockChanged(object sender, EventArgs e)
+        private void onLockChanged(object? sender, EventArgs e)
         {
-            this.TopMost = isBar ? LockCheckBox.Checked : false;
         }
     }
 }
