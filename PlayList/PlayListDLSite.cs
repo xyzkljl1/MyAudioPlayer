@@ -62,20 +62,23 @@ namespace MyAudioPlayer.PlayList
         };
         public static Regex workNameRegex = new Regex("^[RVBJ]{0,2}[0-9]{3,8}");
         public static Regex seriesNameRegex = new Regex("^S ");
-        private const string LoadingPlaceholderText = "Loading...";
-        private const int AppendBatchSize = 50;
+        private const int ScanPublishBatchSize = 500;
+        private const int UiAppendTimeBudgetMs = 8;
+        private const int UiAppendSafetyLimit = 1000;
         // Z:\ASMR_ReliableR benchmark, 36,891 works / 566,674 files:
         // sequential 1556s, 4-way 667s, 8-way 612s, 16-way 707s, unlimited 858s.
         // Directory scans are IO-bound; 8 kept the disk busy without flooding the thread pool.
         private const int MaxConcurrentFileSetLoads = 8;
         private static readonly SemaphoreSlim FileSetLoadSemaphore = new SemaphoreSlim(MaxConcurrentFileSetLoads);
-        private static readonly object LoadingPlaceholderTag = new object();
+        private static readonly object LazyLoadPlaceholderTag = new object();
         private TreeView treeView = new TreeView();
         private TreeNode? currentNode = null;//当前(正在播放的)曲目，和Selected不同，双击触发
         private DirectoryInfo rootDir;
         private string dlServer;
         private DirectoryInfo favDir;
         private List<Node> nodes = new List<Node>();
+        private Queue<Node> pendingUiNodes = new Queue<Node>();
+        private bool appendUiNodesScheduled = false;
         private HttpClient httpClient;
         ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
         ToolStripItem contextMenuStripItemDel;
@@ -133,8 +136,12 @@ namespace MyAudioPlayer.PlayList
         }
         private async void NodeBeforeExpand(object? sender, TreeViewCancelEventArgs e)
         {
-            if (e.Node is not null)
-                await LoadTreeNodeChildrenAsync(e.Node);
+            if (e.Node?.Tag is not Node node)
+                return;
+            if (node.type != Node.NodeType.DLSite || node.loaded)
+                return;
+            e.Cancel = true;
+            await LoadTreeNodeChildrenAsync(e.Node, true);
         }
         private void ContextMenuClicked(object? sender, ToolStripItemClickedEventArgs e)
         {
@@ -180,7 +187,7 @@ namespace MyAudioPlayer.PlayList
             //先找到当前叶节点
             var currentNode = this.currentNode!;//注意不使用treeView.selectedNode
             EnsureTreeNodeLoaded(currentNode);
-            while (currentNode.Nodes.Count > 0 && !IsLoadingPlaceholder(currentNode.Nodes[0]))//
+            while (currentNode.Nodes.Count > 0 && !IsLazyLoadPlaceholder(currentNode.Nodes[0]))//
             {
                 currentNode = currentNode.Nodes[0];
                 EnsureTreeNodeLoaded(currentNode);
@@ -227,14 +234,14 @@ namespace MyAudioPlayer.PlayList
             treeView.Invoke(() =>
             {
                 nodes.Clear();
+                pendingUiNodes.Clear();
+                appendUiNodesScheduled = false;
                 treeView.Nodes.Clear();
-                treeView.Nodes.Add(CreateLoadingNode());
             });//编辑控件需要在主线程，借用treeView的invoke
 
             var pendingNodes = new List<Node>();
             LoadFilesImpl(rootDir, pendingNodes);
             FlushPendingNodes(pendingNodes);
-            treeView.BeginInvoke(() => RemoveLoadingPlaceholders(treeView.Nodes));
             //TODO:sort
         }
         private void LoadFilesImpl(DirectoryInfo dir, List<Node> pendingNodes)
@@ -355,7 +362,7 @@ namespace MyAudioPlayer.PlayList
         private void AddPendingNode(Node node, List<Node> pendingNodes)
         {
             pendingNodes.Add(node);
-            if (pendingNodes.Count >= AppendBatchSize)
+            if (pendingNodes.Count >= ScanPublishBatchSize)
                 FlushPendingNodes(pendingNodes);
         }
         private void FlushPendingNodes(List<Node> pendingNodes)
@@ -366,15 +373,44 @@ namespace MyAudioPlayer.PlayList
             pendingNodes.Clear();
             treeView.BeginInvoke(() =>
             {
-                treeView.SuspendLayout();
-                RemoveLoadingPlaceholders(treeView.Nodes);
                 foreach (var node in batch)
+                    pendingUiNodes.Enqueue(node);
+                ScheduleAppendPendingUiNodes();
+            });
+        }
+        private void ScheduleAppendPendingUiNodes()
+        {
+            if (appendUiNodesScheduled)
+                return;
+            appendUiNodesScheduled = true;
+            treeView.BeginInvoke(() => ProcessPendingUiNodes());
+        }
+        private void ProcessPendingUiNodes()
+        {
+            appendUiNodesScheduled = false;
+            if (treeView.IsDisposed)
+                return;
+            treeView.BeginUpdate();
+            try
+            {
+                var stopwatch = Stopwatch.StartNew();
+                int appended = 0;
+                while (pendingUiNodes.Count > 0
+                    && appended < UiAppendSafetyLimit
+                    && (appended == 0 || stopwatch.ElapsedMilliseconds < UiAppendTimeBudgetMs))
                 {
+                    var node = pendingUiNodes.Dequeue();
                     nodes.Add(node);
                     treeView.Nodes.Add(CreateRootTreeNode(node));
+                    appended++;
                 }
-                treeView.ResumeLayout();
-            });
+            }
+            finally
+            {
+                treeView.EndUpdate();
+            }
+            if (pendingUiNodes.Count > 0)
+                ScheduleAppendPendingUiNodes();
         }
         private TreeNode CreateRootTreeNode(Node fileNode)
         {
@@ -384,7 +420,7 @@ namespace MyAudioPlayer.PlayList
             foreach (var fileSet in fileNode.fileSets)
                 rootNode.Nodes.Add(CreateFileSetTreeNode(fileSet));
             if (fileNode.type == Node.NodeType.DLSite && !fileNode.loaded)
-                rootNode.Nodes.Add(CreateLoadingNode());
+                rootNode.Nodes.Add(CreateLazyLoadPlaceholderNode());
             return rootNode;
         }
         private TreeNode CreateFileSetTreeNode(AFileSet fileSet)
@@ -401,37 +437,32 @@ namespace MyAudioPlayer.PlayList
             }
             return secondNode;
         }
-        private static TreeNode CreateLoadingNode()
+        private static TreeNode CreateLazyLoadPlaceholderNode()
         {
             var node = new TreeNode();
-            node.Text = LoadingPlaceholderText;
-            node.Tag = LoadingPlaceholderTag;
+            node.Tag = LazyLoadPlaceholderTag;
             return node;
         }
-        private static bool IsLoadingPlaceholder(TreeNode node)
+        private static bool IsLazyLoadPlaceholder(TreeNode node)
         {
-            return ReferenceEquals(node.Tag, LoadingPlaceholderTag);
+            return ReferenceEquals(node.Tag, LazyLoadPlaceholderTag);
         }
-        private static void RemoveLoadingPlaceholders(TreeNodeCollection treeNodes)
-        {
-            for (int i = treeNodes.Count - 1; i >= 0; i--)
-                if (IsLoadingPlaceholder(treeNodes[i]))
-                    treeNodes.RemoveAt(i);
-        }
-        private async Task LoadTreeNodeChildrenAsync(TreeNode treeNode)
+        private async Task LoadTreeNodeChildrenAsync(TreeNode treeNode, bool expandAfterLoad = false)
         {
             if (treeNode.Tag is not Node node)
                 return;
             if (node.type != Node.NodeType.DLSite || node.loaded)
                 return;
             if (treeNode.Nodes.Count == 0)
-                treeNode.Nodes.Add(CreateLoadingNode());
+                treeNode.Nodes.Add(CreateLazyLoadPlaceholderNode());
             try
             {
                 var fileSets = await StartLoadingNode(node);
                 if (treeView.IsDisposed || treeNode.TreeView != treeView)
                     return;
                 ApplyLoadedFileSets(treeNode, node, fileSets);
+                if (expandAfterLoad && treeNode.TreeView == treeView && treeNode.Nodes.Count > 0)
+                    treeNode.Expand();
             }
             catch (Exception e)
             {
@@ -495,7 +526,7 @@ namespace MyAudioPlayer.PlayList
             Console.WriteLine(e.Message);
             node.loadingTask = null;
             rootNode.Nodes.Clear();
-            rootNode.Nodes.Add(CreateLoadingNode());
+            rootNode.Nodes.Add(CreateLazyLoadPlaceholderNode());
         }
         public override FileInfo? GetCurrentFile()
         {
@@ -536,7 +567,7 @@ namespace MyAudioPlayer.PlayList
                 EnsureTreeNodeLoaded(selectedNode);
             if (selectedNode.Tag is Node)//顶级节点,此时播放的肯定是第一个文件(播放完第一个通过MoveCurrent播放第二个时会选中子节点)，删除第一个
             {
-                while (selectedNode.Nodes.Count > 0 && !IsLoadingPlaceholder(selectedNode.Nodes[0]))//
+                while (selectedNode.Nodes.Count > 0 && !IsLazyLoadPlaceholder(selectedNode.Nodes[0]))//
                     selectedNode = selectedNode.Nodes[0];
             }
             if (selectedNode.Tag is AFileSet)
@@ -812,7 +843,7 @@ namespace MyAudioPlayer.PlayList
                 return null;
             var curNode = this.currentNode;
             EnsureTreeNodeLoaded(curNode);
-            while (curNode.Nodes.Count > 0 && !IsLoadingPlaceholder(curNode.Nodes[0]))
+            while (curNode.Nodes.Count > 0 && !IsLazyLoadPlaceholder(curNode.Nodes[0]))
             {
                 curNode = curNode.Nodes[0];
                 EnsureTreeNodeLoaded(curNode);
