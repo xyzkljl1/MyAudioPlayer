@@ -160,9 +160,9 @@ namespace MyAudioPlayer
             playSlider.Maximum = Math.Max(0, durationSec);
             playSlider.Value = Math.Clamp(positionSec, playSlider.Minimum, playSlider.Maximum);
             playSlider.Enabled = isLoaded && durationSec > 0;
-            playButton.Enabled = isLoaded;
-            previousButton.Enabled = isLoaded;
-            nextButton.Enabled = isLoaded;
+            playButton.Enabled = true;
+            previousButton.Enabled = true;
+            nextButton.Enabled = true;
             favoriteButton.Enabled = isLoaded;
             deleteButton.Enabled = isLoaded;
             deletePartButton.Enabled = isLoaded && canDeletePart;
