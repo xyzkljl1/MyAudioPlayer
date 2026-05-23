@@ -65,19 +65,38 @@ namespace MyAudioPlayer.PlayList
             public Task<List<AFileSet>>? loadingTask = null;
         };
 
-        private enum ContextTarget
-        {
-            None,
-            WorkList,
-            FileTree
-        }
-
         private enum CursorKind
         {
             None,
             Work,
             FileSet,
             File
+        }
+
+        private enum WorkTreeItemKind
+        {
+            Series,
+            Work,
+            FileSet,
+            File
+        }
+
+        private class WorkTreeItem
+        {
+            public WorkTreeItemKind kind = WorkTreeItemKind.Series;
+            public string title = "";
+            public Node? work = null;
+            public AFileSet? fileSet = null;
+            public AFile? file = null;
+            public WorkTreeItem? parent = null;
+            public List<WorkTreeItem> children = new List<WorkTreeItem>();
+            public bool expanded = false;
+            public bool childrenMaterialized = false;
+            public bool loading = false;
+            public int depth = 0;
+            public bool IsWork { get { return kind == WorkTreeItemKind.Work; } }
+            public bool IsSeries { get { return kind == WorkTreeItemKind.Series; } }
+            public bool IsPart { get { return kind == WorkTreeItemKind.FileSet || kind == WorkTreeItemKind.File; } }
         }
 
         public static Regex workNameRegex = new Regex("^[RVBJ]{0,2}[0-9]{3,8}");
@@ -89,24 +108,23 @@ namespace MyAudioPlayer.PlayList
         private const int MaxConcurrentFileSetLoads = 8;
         private static readonly SemaphoreSlim FileSetLoadSemaphore = new SemaphoreSlim(MaxConcurrentFileSetLoads);
 
-        private SplitContainer mainControl = new SplitContainer();
         private ListView worksListView = new ListView();
-        private TreeView fileTreeView = new TreeView();
         private DirectoryInfo rootDir;
         private string dlServer;
         private DirectoryInfo favDir;
         private List<Node> nodes = new List<Node>();
+        // Keep the left work tree virtualized; WinForms TreeView becomes sluggish when tens of thousands of works are materialized at once.
+        private List<WorkTreeItem> rootItems = new List<WorkTreeItem>();
+        private List<WorkTreeItem> visibleItems = new List<WorkTreeItem>();
+        private Dictionary<Node, WorkTreeItem> workItems = new Dictionary<Node, WorkTreeItem>();
         private HttpClient httpClient;
         private ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
         private ToolStripItem contextMenuStripItemDel;
-        private ContextTarget contextTarget = ContextTarget.None;
         private int displayedWorkIndex = -1;
         private int currentWorkIndex = -1;
         private int currentFileSetIndex = 0;
         private int currentFileIndex = 0;
         private CursorKind currentCursorKind = CursorKind.None;
-        private int fileTreeLoadVersion = 0;
-        private bool splitterDistanceInitialized = false;
         private event TreeNodeMouseClickEventHandler? mountedDoubleClickHandlers;
 
         public PlayListDLSite(string _rootDir, MyFileEditEventHandler _begin, MyFileEditEventHandler _end)
@@ -115,10 +133,6 @@ namespace MyAudioPlayer.PlayList
             dlServer = Config.DLServerAddress;
             favDir = new DirectoryInfo(Config.DLSiteFavDir);
             Title = "DL-" + rootDir.Name;
-
-            mainControl.Dock = DockStyle.Fill;
-            mainControl.Orientation = Orientation.Vertical;
-            mainControl.Resize += delegate { InitializeSplitterDistance(); };
 
             worksListView.Dock = DockStyle.Fill;
             worksListView.View = View.Details;
@@ -134,13 +148,6 @@ namespace MyAudioPlayer.PlayList
             worksListView.MouseClick += this.WorksListView_MouseClick;
             worksListView.Resize += delegate { ResizeWorkListColumns(); };
 
-            fileTreeView.Dock = DockStyle.Fill;
-            fileTreeView.NodeMouseDoubleClick += this.FileTreeView_NodeMouseDoubleClick;
-            fileTreeView.NodeMouseClick += this.FileTreeView_NodeMouseClick;
-
-            mainControl.Panel1.Controls.Add(worksListView);
-            mainControl.Panel2.Controls.Add(fileTreeView);
-
             httpClient = new HttpClient();
             contextMenuStrip.Items.Add("Fav");
             contextMenuStrip.Items.Add("DelPart");
@@ -149,14 +156,6 @@ namespace MyAudioPlayer.PlayList
 
             MountFileEditEvent(_begin, _end);
             Task.Run(LoadFiles);
-        }
-
-        private void InitializeSplitterDistance()
-        {
-            if (splitterDistanceInitialized || mainControl.Width < 500)
-                return;
-            mainControl.SplitterDistance = Math.Min(360, mainControl.Width - mainControl.Panel2MinSize - mainControl.SplitterWidth);
-            splitterDistanceInitialized = true;
         }
 
         private void ResizeWorkListColumns()
@@ -169,76 +168,71 @@ namespace MyAudioPlayer.PlayList
 
         public override Control GetMainControl()
         {
-            return mainControl;
+            return worksListView;
         }
 
         private void WorksListView_RetrieveVirtualItem(object? sender, RetrieveVirtualItemEventArgs e)
         {
-            if (!IsValidWorkIndex(e.ItemIndex))
+            if (!IsValidVisibleIndex(e.ItemIndex))
             {
                 e.Item = new ListViewItem("");
                 return;
             }
 
-            var node = nodes[e.ItemIndex];
-            e.Item = new ListViewItem(new[] { node.title, node.RJ });
+            var item = visibleItems[e.ItemIndex];
+            e.Item = new ListViewItem(new[] { GetTreeText(item), GetTreeRjText(item) });
         }
 
-        private async void WorksListView_SelectedIndexChanged(object? sender, EventArgs e)
+        private void WorksListView_SelectedIndexChanged(object? sender, EventArgs e)
         {
             int selectedIndex = GetSelectedWorkIndex();
-            if (selectedIndex < 0)
-                return;
-
-            await LoadWorkIntoFileTreeAsync(selectedIndex);
+            displayedWorkIndex = selectedIndex;
         }
 
-        private void WorksListView_DoubleClick(object? sender, EventArgs e)
+        private async void WorksListView_DoubleClick(object? sender, EventArgs e)
         {
-            int selectedIndex = GetSelectedWorkIndex();
-            if (selectedIndex < 0)
+            var item = GetSelectedVisibleItem();
+            if (item is null)
                 return;
 
-            SetCurrentToWork(selectedIndex);
-            _ = LoadWorkIntoFileTreeAsync(selectedIndex, true);
-            RaiseMountedDoubleClickHandlers();
+            if (TrySetCurrentFromTreeItem(item))
+            {
+                if (item.IsWork)
+                    _ = EnsureWorkChildrenAsync(item);
+                RaiseMountedDoubleClickHandlers();
+                return;
+            }
+
+            if (CanExpandItem(item))
+                await ToggleTreeItemAsync(item);
         }
 
-        private void WorksListView_MouseClick(object? sender, MouseEventArgs e)
+        private async void WorksListView_MouseClick(object? sender, MouseEventArgs e)
         {
-            if (e.Button != MouseButtons.Right)
-                return;
-
             var item = worksListView.GetItemAt(e.X, e.Y);
             if (item is null)
                 return;
 
             worksListView.SelectedIndices.Clear();
             worksListView.SelectedIndices.Add(item.Index);
-            contextTarget = ContextTarget.WorkList;
-            EnsureDelContextMenuItemVisible(true);
-            contextMenuStrip.Show(worksListView, e.X, e.Y);
-        }
+            var treeItem = GetVisibleItem(item.Index);
+            if (treeItem is null)
+                return;
 
-        private void FileTreeView_NodeMouseClick(object? sender, TreeNodeMouseClickEventArgs e)
-        {
+            if (e.Button == MouseButtons.Left)
+            {
+                if (CanExpandItem(treeItem))
+                    await ToggleTreeItemAsync(treeItem);
+                return;
+            }
+
             if (e.Button != MouseButtons.Right)
                 return;
-            if (e.Node == null)
+            if (!IsValidWorkIndex(GetWorkIndexForItem(treeItem)))
                 return;
 
-            fileTreeView.SelectedNode = e.Node;
-            contextTarget = ContextTarget.FileTree;
-            EnsureDelContextMenuItemVisible(false);
-            contextMenuStrip.Show(fileTreeView, e.X, e.Y);
-        }
-
-        private void FileTreeView_NodeMouseDoubleClick(object? sender, TreeNodeMouseClickEventArgs e)
-        {
-            if (!TrySetCurrentFromFileTreeNode(e.Node))
-                return;
-
-            RaiseMountedDoubleClickHandlers();
+            EnsureDelContextMenuItemVisible(treeItem.IsWork);
+            contextMenuStrip.Show(worksListView, e.X, e.Y);
         }
 
         private void ContextMenuClicked(object? sender, ToolStripItemClickedEventArgs e)
@@ -295,9 +289,8 @@ namespace MyAudioPlayer.PlayList
 
         public void RefreshMainControl()
         {
-            worksListView.VirtualListSize = nodes.Count;
+            RebuildVisibleItems();
             worksListView.Invalidate();
-            _ = LoadWorkIntoFileTreeAsync(displayedWorkIndex);
         }
 
         private void LoadFiles()
@@ -308,18 +301,20 @@ namespace MyAudioPlayer.PlayList
             worksListView.Invoke(() =>
             {
                 nodes.Clear();
+                rootItems.Clear();
+                visibleItems.Clear();
+                workItems.Clear();
                 currentWorkIndex = -1;
                 displayedWorkIndex = -1;
                 worksListView.VirtualListSize = 0;
-                fileTreeView.Nodes.Clear();
             });
 
-            var pendingNodes = new List<Node>();
-            LoadFilesImpl(rootDir, pendingNodes);
-            FlushPendingNodes(pendingNodes);
+            var pendingItems = new List<WorkTreeItem>();
+            LoadFilesImpl(rootDir, null, pendingItems);
+            FlushPendingItems(pendingItems);
         }
 
-        private void LoadFilesImpl(DirectoryInfo dir, List<Node> pendingNodes)
+        private void LoadFilesImpl(DirectoryInfo dir, WorkTreeItem? parentItem, List<WorkTreeItem> pendingItems)
         {
             try
             {
@@ -327,7 +322,7 @@ namespace MyAudioPlayer.PlayList
                 {
                     var file = new AFile(fileInfo);
                     if (file.type != AFile.FileType.OTHER)
-                        AddPendingNode(CreateSingleFileNode(dir, file), pendingNodes);
+                        AddPendingWorkItem(CreateSingleFileNode(dir, file), parentItem, pendingItems);
                 }
             }
             catch (Exception e)
@@ -341,7 +336,7 @@ namespace MyAudioPlayer.PlayList
             {
                 foreach (var dirInfo in dir.EnumerateDirectories())
                     if (workNameRegex.IsMatch(dirInfo.Name))
-                        AddPendingNode(CreateDLSiteNode(dirInfo), pendingNodes);
+                        AddPendingWorkItem(CreateDLSiteNode(dirInfo), parentItem, pendingItems);
                     else if (seriesNameRegex.IsMatch(dirInfo.Name))
                         seriesDirs.Add(dirInfo);
             }
@@ -352,7 +347,11 @@ namespace MyAudioPlayer.PlayList
             }
 
             foreach (var dirInfo in seriesDirs)
-                LoadFilesImpl(dirInfo, pendingNodes);
+            {
+                var seriesItem = CreateSeriesItem(dirInfo.Name, parentItem);
+                AddPendingItem(seriesItem, pendingItems);
+                LoadFilesImpl(dirInfo, seriesItem, pendingItems);
+            }
         }
 
         private static List<AFileSet> LoadFileSetsFromDir(DirectoryInfo dirInfo)
@@ -422,40 +421,407 @@ namespace MyAudioPlayer.PlayList
             return node;
         }
 
-        private void AddPendingNode(Node node, List<Node> pendingNodes)
+        private static WorkTreeItem CreateSeriesItem(string title, WorkTreeItem? parentItem)
         {
-            pendingNodes.Add(node);
-            if (pendingNodes.Count >= ScanPublishBatchSize)
-                FlushPendingNodes(pendingNodes);
+            return new WorkTreeItem
+            {
+                kind = WorkTreeItemKind.Series,
+                title = title,
+                parent = parentItem,
+                depth = parentItem is null ? 0 : parentItem.depth + 1,
+                expanded = false
+            };
         }
 
-        private void FlushPendingNodes(List<Node> pendingNodes)
+        private static WorkTreeItem CreateWorkItem(Node node, WorkTreeItem? parentItem)
         {
-            if (pendingNodes.Count == 0)
+            return new WorkTreeItem
+            {
+                kind = WorkTreeItemKind.Work,
+                title = node.title,
+                work = node,
+                parent = parentItem,
+                depth = parentItem is null ? 0 : parentItem.depth + 1
+            };
+        }
+
+        private static WorkTreeItem CreateFileSetItem(AFileSet fileSet, WorkTreeItem parentItem)
+        {
+            return new WorkTreeItem
+            {
+                kind = WorkTreeItemKind.FileSet,
+                title = fileSet.title,
+                fileSet = fileSet,
+                parent = parentItem,
+                childrenMaterialized = true,
+                depth = parentItem.depth + 1
+            };
+        }
+
+        private static WorkTreeItem CreateFileItem(AFile file, WorkTreeItem parentItem)
+        {
+            return new WorkTreeItem
+            {
+                kind = WorkTreeItemKind.File,
+                title = file.title,
+                file = file,
+                parent = parentItem,
+                childrenMaterialized = true,
+                depth = parentItem.depth + 1
+            };
+        }
+
+        private void AddTreeItemToUi(WorkTreeItem item)
+        {
+            if (item.parent is null)
+                rootItems.Add(item);
+            else
+                item.parent.children.Add(item);
+
+            if (item.work is Node node)
+            {
+                nodes.Add(node);
+                workItems[node] = item;
+            }
+        }
+
+        private void RebuildVisibleItems()
+        {
+            visibleItems.Clear();
+            foreach (var item in rootItems)
+                AddVisibleItem(item);
+            worksListView.VirtualListSize = visibleItems.Count;
+        }
+
+        private void AddVisibleItem(WorkTreeItem item)
+        {
+            visibleItems.Add(item);
+            if (!item.expanded)
                 return;
-            var batch = pendingNodes.ToList();
-            pendingNodes.Clear();
+            foreach (var child in item.children)
+                AddVisibleItem(child);
+        }
+
+        private static string GetTreeText(WorkTreeItem item)
+        {
+            var marker = GetTreeMarker(item);
+            return GetIndent(item) + marker + item.title;
+        }
+
+        private static string GetTreeMarker(WorkTreeItem item)
+        {
+            if (item.loading)
+                return "[...] ";
+            if (!CanExpandItem(item))
+                return "    ";
+            return item.expanded ? "[-] " : "[+] ";
+        }
+
+        private static string GetTreeRjText(WorkTreeItem item)
+        {
+            return item.kind == WorkTreeItemKind.Work && item.work is Node node ? node.RJ : "";
+        }
+
+        private static string GetIndent(WorkTreeItem item)
+        {
+            return new string(' ', item.depth * 4);
+        }
+
+        private WorkTreeItem? GetVisibleItem(int index)
+        {
+            if (!IsValidVisibleIndex(index))
+                return null;
+            return visibleItems[index];
+        }
+
+        private WorkTreeItem? GetSelectedVisibleItem()
+        {
+            if (worksListView.SelectedIndices.Count <= 0)
+                return null;
+            return GetVisibleItem(worksListView.SelectedIndices[0]);
+        }
+
+        private bool IsValidVisibleIndex(int index)
+        {
+            return index >= 0 && index < visibleItems.Count;
+        }
+
+        private int GetWorkIndexForItem(WorkTreeItem item)
+        {
+            var node = GetWorkForItem(item);
+            if (node is null)
+                return -1;
+            return nodes.IndexOf(node);
+        }
+
+        private static Node? GetWorkForItem(WorkTreeItem item)
+        {
+            var current = item;
+            while (current is not null)
+            {
+                if (current.work is Node node)
+                    return node;
+                current = current.parent;
+            }
+            return null;
+        }
+
+        private static bool CanExpandItem(WorkTreeItem item)
+        {
+            if (item.kind == WorkTreeItemKind.File)
+                return false;
+            if (item.kind == WorkTreeItemKind.Work)
+                return !item.childrenMaterialized || item.children.Count > 0;
+            return item.children.Count > 0;
+        }
+
+        private async Task ToggleTreeItemAsync(WorkTreeItem item)
+        {
+            if (!CanExpandItem(item))
+                return;
+
+            if (item.kind == WorkTreeItemKind.Work && !item.childrenMaterialized)
+            {
+                if (!await EnsureWorkChildrenAsync(item))
+                    return;
+                item.expanded = true;
+            }
+            else
+                item.expanded = !item.expanded;
+
+            RebuildVisibleItems();
+            worksListView.Invalidate();
+        }
+
+        private async Task<bool> EnsureWorkChildrenAsync(WorkTreeItem item)
+        {
+            if (!item.IsWork || item.work is null)
+                return false;
+            if (item.childrenMaterialized)
+                return true;
+            if (item.loading)
+                return false;
+
+            var node = item.work;
+            item.loading = true;
+            RefreshTreeItem(item);
+            try
+            {
+                if (!node.loaded)
+                {
+                    node.fileSets = await StartLoadingNode(node);
+                    node.loaded = true;
+                    node.loadingTask = null;
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                node.loadingTask = null;
+                return false;
+            }
+            finally
+            {
+                item.loading = false;
+                RefreshTreeItem(item);
+            }
+
+            if (!workItems.TryGetValue(node, out var currentItem) || !ReferenceEquals(currentItem, item))
+                return false;
+
+            MaterializeWorkChildren(item);
+            return true;
+        }
+
+        private void MaterializeWorkChildren(WorkTreeItem item)
+        {
+            if (!item.IsWork || item.work is null)
+                return;
+
+            item.children.Clear();
+            foreach (var fileSet in item.work.fileSets)
+            {
+                var fileSetItem = CreateFileSetItem(fileSet, item);
+                foreach (var file in fileSet.files)
+                    fileSetItem.children.Add(CreateFileItem(file, fileSetItem));
+                item.children.Add(fileSetItem);
+            }
+            item.childrenMaterialized = true;
+        }
+
+        private void RefreshWorkTreeChildren(int index)
+        {
+            if (!IsValidWorkIndex(index))
+                return;
+            if (!workItems.TryGetValue(nodes[index], out var item) || !item.childrenMaterialized)
+                return;
+            MaterializeWorkChildren(item);
+            RebuildVisibleItems();
+            worksListView.Invalidate();
+        }
+
+        private void RefreshTreeItem(WorkTreeItem item)
+        {
+            if (!worksListView.IsHandleCreated)
+                return;
+            int visibleIndex = visibleItems.IndexOf(item);
+            if (!IsValidVisibleIndex(visibleIndex))
+                return;
+            worksListView.RedrawItems(visibleIndex, visibleIndex, false);
+        }
+
+        private bool TrySetCurrentFromTreeItem(WorkTreeItem item)
+        {
+            if (!TryGetTreeItemIndexes(item, out var workIndex, out var fileSetIndex, out var fileIndex))
+                return false;
+
+            if (item.kind == WorkTreeItemKind.File)
+                SetCurrentToFile(workIndex, fileSetIndex, fileIndex);
+            else if (item.kind == WorkTreeItemKind.FileSet)
+                SetCurrentToFileSet(workIndex, fileSetIndex);
+            else if (item.kind == WorkTreeItemKind.Work)
+                SetCurrentToWork(workIndex);
+            else
+                return false;
+            return true;
+        }
+
+        private bool TryGetTreeItemIndexes(WorkTreeItem item, out int workIndex, out int fileSetIndex, out int fileIndex)
+        {
+            workIndex = -1;
+            fileSetIndex = -1;
+            fileIndex = -1;
+
+            var node = GetWorkForItem(item);
+            if (node is null)
+                return false;
+            workIndex = nodes.IndexOf(node);
+            if (!IsValidWorkIndex(workIndex))
+                return false;
+
+            if (item.kind == WorkTreeItemKind.Work)
+                return true;
+
+            if (item.kind == WorkTreeItemKind.FileSet && item.fileSet is AFileSet fileSet)
+            {
+                fileSetIndex = node.fileSets.IndexOf(fileSet);
+                return fileSetIndex >= 0;
+            }
+
+            if (item.kind == WorkTreeItemKind.File
+                && item.file is AFile file
+                && item.parent?.fileSet is AFileSet parentFileSet)
+            {
+                fileSetIndex = node.fileSets.IndexOf(parentFileSet);
+                if (fileSetIndex < 0)
+                    return false;
+                fileIndex = node.fileSets[fileSetIndex].files.IndexOf(file);
+                return fileIndex >= 0;
+            }
+
+            return false;
+        }
+
+        private WorkTreeItem? GetCurrentTreeItem()
+        {
+            if (!IsValidWorkIndex(currentWorkIndex))
+                return null;
+            var node = nodes[currentWorkIndex];
+            if (!workItems.TryGetValue(node, out var workItem))
+                return null;
+            if (currentCursorKind == CursorKind.Work)
+                return workItem;
+            if (!workItem.childrenMaterialized)
+                MaterializeWorkChildren(workItem);
+            if (currentFileSetIndex < 0 || currentFileSetIndex >= node.fileSets.Count)
+                return workItem;
+
+            var fileSet = node.fileSets[currentFileSetIndex];
+            var fileSetItem = workItem.children.FirstOrDefault(item => ReferenceEquals(item.fileSet, fileSet));
+            if (fileSetItem is null || currentCursorKind != CursorKind.File)
+                return fileSetItem ?? workItem;
+            if (currentFileIndex < 0 || currentFileIndex >= fileSet.files.Count)
+                return fileSetItem;
+
+            var file = fileSet.files[currentFileIndex];
+            return fileSetItem.children.FirstOrDefault(item => ReferenceEquals(item.file, file)) ?? fileSetItem;
+        }
+
+        private void SelectTreeItem(WorkTreeItem item)
+        {
+            ExpandAncestors(item);
+            RebuildVisibleItems();
+            int visibleIndex = visibleItems.IndexOf(item);
+            if (!IsValidVisibleIndex(visibleIndex))
+                return;
+            worksListView.SelectedIndices.Clear();
+            worksListView.SelectedIndices.Add(visibleIndex);
+            worksListView.EnsureVisible(visibleIndex);
+            worksListView.Focus();
+        }
+
+        private void ExpandAncestors(WorkTreeItem item)
+        {
+            var parent = item.parent;
+            while (parent is not null)
+            {
+                parent.expanded = true;
+                parent = parent.parent;
+            }
+        }
+
+        private void RemoveWorkTreeItem(Node node)
+        {
+            if (!workItems.TryGetValue(node, out var item))
+                return;
+            workItems.Remove(node);
+            RemoveTreeItem(item);
+            PruneEmptySeries(item.parent);
+        }
+
+        private void RemoveTreeItem(WorkTreeItem item)
+        {
+            if (item.parent is null)
+                rootItems.Remove(item);
+            else
+                item.parent.children.Remove(item);
+        }
+
+        private void PruneEmptySeries(WorkTreeItem? item)
+        {
+            while (item is not null && !item.IsWork && item.children.Count == 0)
+            {
+                var parent = item.parent;
+                RemoveTreeItem(item);
+                item = parent;
+            }
+        }
+
+        private void AddPendingWorkItem(Node node, WorkTreeItem? parentItem, List<WorkTreeItem> pendingItems)
+        {
+            AddPendingItem(CreateWorkItem(node, parentItem), pendingItems);
+        }
+
+        private void AddPendingItem(WorkTreeItem item, List<WorkTreeItem> pendingItems)
+        {
+            pendingItems.Add(item);
+            if (pendingItems.Count >= ScanPublishBatchSize)
+                FlushPendingItems(pendingItems);
+        }
+
+        private void FlushPendingItems(List<WorkTreeItem> pendingItems)
+        {
+            if (pendingItems.Count == 0)
+                return;
+            var batch = pendingItems.ToList();
+            pendingItems.Clear();
             worksListView.BeginInvoke(() =>
             {
-                nodes.AddRange(batch);
-                worksListView.VirtualListSize = nodes.Count;
+                foreach (var item in batch)
+                    AddTreeItemToUi(item);
+                RebuildVisibleItems();
                 worksListView.Invalidate();
             });
-        }
-
-        private TreeNode CreateFileSetTreeNode(AFileSet fileSet)
-        {
-            var secondNode = new TreeNode();
-            secondNode.Text = fileSet.title;
-            secondNode.Tag = fileSet;
-            foreach (var file in fileSet.files)
-            {
-                var leafNode = new TreeNode();
-                leafNode.Text = file.title;
-                leafNode.Tag = file;
-                secondNode.Nodes.Add(leafNode);
-            }
-            return secondNode;
         }
 
         private static Task<List<AFileSet>> StartLoadingNode(Node node)
@@ -479,55 +845,6 @@ namespace MyAudioPlayer.PlayList
             }
         }
 
-        private async Task LoadWorkIntoFileTreeAsync(int index, bool selectCurrentAfterLoad = false)
-        {
-            if (!IsValidWorkIndex(index))
-                return;
-
-            var node = nodes[index];
-            int loadVersion = ++fileTreeLoadVersion;
-            displayedWorkIndex = index;
-
-            fileTreeView.BeginUpdate();
-            fileTreeView.Nodes.Clear();
-            fileTreeView.EndUpdate();
-
-            if (!node.loaded)
-            {
-                try
-                {
-                    node.fileSets = await StartLoadingNode(node);
-                    node.loaded = true;
-                    node.loadingTask = null;
-                    RefreshWorkItem(index);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e.Message);
-                    node.loadingTask = null;
-                    return;
-                }
-            }
-
-            if (loadVersion != fileTreeLoadVersion || !IsSameNodeAtIndex(index, node))
-                return;
-
-            fileTreeView.BeginUpdate();
-            try
-            {
-                fileTreeView.Nodes.Clear();
-                foreach (var fileSet in node.fileSets)
-                    fileTreeView.Nodes.Add(CreateFileSetTreeNode(fileSet));
-            }
-            finally
-            {
-                fileTreeView.EndUpdate();
-            }
-
-            if (selectCurrentAfterLoad)
-                SelectCurrentFileInTree();
-        }
-
         private bool EnsureWorkLoaded(int index)
         {
             if (!IsValidWorkIndex(index))
@@ -540,9 +857,8 @@ namespace MyAudioPlayer.PlayList
                 node.fileSets = StartLoadingNode(node).GetAwaiter().GetResult();
                 node.loaded = true;
                 node.loadingTask = null;
+                RefreshWorkTreeChildren(index);
                 RefreshWorkItem(index);
-                if (displayedWorkIndex == index)
-                    BuildFileTree(index);
                 return true;
             }
             catch (Exception e)
@@ -550,24 +866,6 @@ namespace MyAudioPlayer.PlayList
                 Console.WriteLine(e.Message);
                 node.loadingTask = null;
                 return false;
-            }
-        }
-
-        private void BuildFileTree(int index)
-        {
-            if (!IsValidWorkIndex(index))
-                return;
-            displayedWorkIndex = index;
-            fileTreeView.BeginUpdate();
-            try
-            {
-                fileTreeView.Nodes.Clear();
-                foreach (var fileSet in nodes[index].fileSets)
-                    fileTreeView.Nodes.Add(CreateFileSetTreeNode(fileSet));
-            }
-            finally
-            {
-                fileTreeView.EndUpdate();
             }
         }
 
@@ -584,10 +882,7 @@ namespace MyAudioPlayer.PlayList
 
         public void DeleteNodePart(TreeNode _node)
         {
-            if (_node is null)
-                return;
-            if (contextTarget == ContextTarget.FileTree && TryGetFileTreeNodeIndexes(_node, out var workIndex, out var fileSetIndex, out var fileIndex))
-                DeletePartAt(workIndex, fileSetIndex, fileIndex);
+            DeletePartContextTarget();
         }
 
         public void DeleteNode(TreeNode _node)
@@ -664,11 +959,12 @@ namespace MyAudioPlayer.PlayList
         {
             if (!IsValidWorkIndex(currentWorkIndex))
                 return;
-            worksListView.SelectedIndices.Clear();
-            worksListView.SelectedIndices.Add(currentWorkIndex);
-            worksListView.EnsureVisible(currentWorkIndex);
-            worksListView.Focus();
-            _ = LoadWorkIntoFileTreeAsync(currentWorkIndex, true);
+            if (!EnsureWorkLoaded(currentWorkIndex))
+                return;
+            var item = GetCurrentTreeItem();
+            if (item is null)
+                return;
+            SelectTreeItem(item);
         }
 
         private void MoveCurrentNext()
@@ -763,41 +1059,6 @@ namespace MyAudioPlayer.PlayList
             return TryFindNextFileInWork(node, 0, 0, out fileSetIndex, out fileIndex);
         }
 
-        private bool TrySetCurrentFromFileTreeNode(TreeNode? treeNode)
-        {
-            if (!TryGetFileTreeNodeIndexes(treeNode, out var workIndex, out var fileSetIndex, out var fileIndex))
-                return false;
-            if (fileIndex >= 0)
-                SetCurrentToFile(workIndex, fileSetIndex, fileIndex);
-            else
-                SetCurrentToFileSet(workIndex, fileSetIndex);
-            return true;
-        }
-
-        private bool TryGetFileTreeNodeIndexes(TreeNode? treeNode, out int workIndex, out int fileSetIndex, out int fileIndex)
-        {
-            workIndex = displayedWorkIndex;
-            fileSetIndex = -1;
-            fileIndex = -1;
-            if (!IsValidWorkIndex(workIndex) || treeNode is null)
-                return false;
-            var node = nodes[workIndex];
-            if (treeNode.Tag is AFileSet fileSet)
-            {
-                fileSetIndex = node.fileSets.IndexOf(fileSet);
-                return fileSetIndex >= 0;
-            }
-            if (treeNode.Tag is AFile file && treeNode.Parent?.Tag is AFileSet parentFileSet)
-            {
-                fileSetIndex = node.fileSets.IndexOf(parentFileSet);
-                if (fileSetIndex < 0)
-                    return false;
-                fileIndex = node.fileSets[fileSetIndex].files.IndexOf(file);
-                return fileIndex >= 0;
-            }
-            return false;
-        }
-
         private void SetCurrentToWork(int workIndex)
         {
             if (!IsValidWorkIndex(workIndex))
@@ -842,8 +1103,10 @@ namespace MyAudioPlayer.PlayList
 
         private void DeletePartContextTarget()
         {
-            if (contextTarget == ContextTarget.FileTree
-                && TryGetFileTreeNodeIndexes(fileTreeView.SelectedNode, out var workIndex, out var fileSetIndex, out var fileIndex))
+            var item = GetSelectedVisibleItem();
+            if (item is not null
+                && item.IsPart
+                && TryGetTreeItemIndexes(item, out var workIndex, out var fileSetIndex, out var fileIndex))
             {
                 DeletePartAt(workIndex, fileSetIndex, fileIndex);
                 return;
@@ -1009,8 +1272,7 @@ namespace MyAudioPlayer.PlayList
                 return;
             }
 
-            if (displayedWorkIndex == workIndex)
-                BuildFileTree(workIndex);
+            RefreshWorkTreeChildren(workIndex);
             if (currentWorkIndex == workIndex && !ResolveCurrentFile(out _))
                 SetCurrentToFileSet(workIndex, 0);
         }
@@ -1020,8 +1282,10 @@ namespace MyAudioPlayer.PlayList
             if (!IsValidWorkIndex(index))
                 return;
 
+            var node = nodes[index];
+            RemoveWorkTreeItem(node);
             nodes.RemoveAt(index);
-            worksListView.VirtualListSize = nodes.Count;
+            RebuildVisibleItems();
             worksListView.Invalidate();
 
             if (currentWorkIndex == index)
@@ -1035,10 +1299,7 @@ namespace MyAudioPlayer.PlayList
                 currentWorkIndex--;
 
             if (displayedWorkIndex == index)
-            {
                 displayedWorkIndex = -1;
-                fileTreeView.Nodes.Clear();
-            }
             else if (displayedWorkIndex > index)
                 displayedWorkIndex--;
         }
@@ -1057,9 +1318,10 @@ namespace MyAudioPlayer.PlayList
 
         private int GetSelectedWorkIndex()
         {
-            if (worksListView.SelectedIndices.Count <= 0)
+            var item = GetSelectedVisibleItem();
+            if (item is null)
                 return -1;
-            return worksListView.SelectedIndices[0];
+            return GetWorkIndexForItem(item);
         }
 
         private int GetSelectedOrDisplayedWorkIndex()
@@ -1072,8 +1334,6 @@ namespace MyAudioPlayer.PlayList
 
         private int GetContextWorkIndex()
         {
-            if (contextTarget == ContextTarget.FileTree && IsValidWorkIndex(displayedWorkIndex))
-                return displayedWorkIndex;
             return GetSelectedOrDisplayedWorkIndex();
         }
 
@@ -1082,16 +1342,16 @@ namespace MyAudioPlayer.PlayList
             return index >= 0 && index < nodes.Count;
         }
 
-        private bool IsSameNodeAtIndex(int index, Node node)
-        {
-            return IsValidWorkIndex(index) && ReferenceEquals(nodes[index], node);
-        }
-
         private void RefreshWorkItem(int index)
         {
             if (!worksListView.IsHandleCreated || !IsValidWorkIndex(index))
                 return;
-            worksListView.RedrawItems(index, index, false);
+            if (!workItems.TryGetValue(nodes[index], out var item))
+                return;
+            int visibleIndex = visibleItems.IndexOf(item);
+            if (!IsValidVisibleIndex(visibleIndex))
+                return;
+            worksListView.RedrawItems(visibleIndex, visibleIndex, false);
         }
 
         private void EnsureDelContextMenuItemVisible(bool visible)
@@ -1113,27 +1373,6 @@ namespace MyAudioPlayer.PlayList
             mountedDoubleClickHandlers?.Invoke(
                 this,
                 new TreeNodeMouseClickEventArgs(new TreeNode(), MouseButtons.Left, 2, 0, 0));
-        }
-
-        private void SelectCurrentFileInTree()
-        {
-            if (!IsValidWorkIndex(currentWorkIndex) || displayedWorkIndex != currentWorkIndex)
-                return;
-            if (!ResolveCurrentFile(out _))
-                return;
-
-            if (currentFileSetIndex < 0 || currentFileSetIndex >= fileTreeView.Nodes.Count)
-                return;
-
-            var fileSetNode = fileTreeView.Nodes[currentFileSetIndex];
-            TreeNode target = fileSetNode;
-            if (currentCursorKind == CursorKind.File
-                && currentFileIndex >= 0
-                && currentFileIndex < fileSetNode.Nodes.Count)
-                target = fileSetNode.Nodes[currentFileIndex];
-
-            fileTreeView.SelectedNode = target;
-            target.EnsureVisible();
         }
 
         string GetFileDetail(FileInfo fileInfo)
