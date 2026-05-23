@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace MyAudioPlayer.PlayList
@@ -57,9 +58,18 @@ namespace MyAudioPlayer.PlayList
             public bool IsDLSite() { return type == NodeType.DLSite; }
             public List<AFileSet> fileSets = new List<AFileSet>();
             public bool loaded = false;//是否已创建子节点
+            public Task<List<AFileSet>>? loadingTask = null;
         };
         public static Regex workNameRegex = new Regex("^[RVBJ]{0,2}[0-9]{3,8}");
         public static Regex seriesNameRegex = new Regex("^S ");
+        private const string LoadingPlaceholderText = "Loading...";
+        private const int AppendBatchSize = 50;
+        // Z:\ASMR_ReliableR benchmark, 36,891 works / 566,674 files:
+        // sequential 1556s, 4-way 667s, 8-way 612s, 16-way 707s, unlimited 858s.
+        // Directory scans are IO-bound; 8 kept the disk busy without flooding the thread pool.
+        private const int MaxConcurrentFileSetLoads = 8;
+        private static readonly SemaphoreSlim FileSetLoadSemaphore = new SemaphoreSlim(MaxConcurrentFileSetLoads);
+        private static readonly object LoadingPlaceholderTag = new object();
         private TreeView treeView = new TreeView();
         private TreeNode? currentNode = null;//当前(正在播放的)曲目，和Selected不同，双击触发
         private DirectoryInfo rootDir;
@@ -80,6 +90,7 @@ namespace MyAudioPlayer.PlayList
             | System.Windows.Forms.AnchorStyles.Right)));
             treeView.NodeMouseDoubleClick += this.NodeDoubleClicked;
             treeView.NodeMouseClick += this.NodeClicked;
+            treeView.BeforeExpand += this.NodeBeforeExpand;
             //treeView.Scrollable = true;//需要设置tabPage.AutoScroll，而不是treeView.Scrollable
             httpClient = new HttpClient();
             contextMenuStrip.Items.Add("Fav");
@@ -119,6 +130,11 @@ namespace MyAudioPlayer.PlayList
                 }
                 contextMenuStrip.Show(treeView, e.X, e.Y);
             }
+        }
+        private async void NodeBeforeExpand(object? sender, TreeViewCancelEventArgs e)
+        {
+            if (e.Node is not null)
+                await LoadTreeNodeChildrenAsync(e.Node);
         }
         private void ContextMenuClicked(object? sender, ToolStripItemClickedEventArgs e)
         {
@@ -163,8 +179,12 @@ namespace MyAudioPlayer.PlayList
             }
             //先找到当前叶节点
             var currentNode = this.currentNode!;//注意不使用treeView.selectedNode
-            while (currentNode.Nodes.Count > 0)//
+            EnsureTreeNodeLoaded(currentNode);
+            while (currentNode.Nodes.Count > 0 && !IsLoadingPlaceholder(currentNode.Nodes[0]))//
+            {
                 currentNode = currentNode.Nodes[0];
+                EnsureTreeNodeLoaded(currentNode);
+            }
             TreeNode nextNode;
             if (offset == 1)
             {
@@ -195,77 +215,76 @@ namespace MyAudioPlayer.PlayList
             treeView.SuspendLayout();
             treeView.Nodes.Clear();
             foreach (var fileNode in this.nodes)
-            {
-                var rootNode = new TreeNode();
-                rootNode.Text = fileNode.title;
-                rootNode.Tag = fileNode;
-                foreach (var fileSet in fileNode.fileSets)
-                {
-                    var secondNode = new TreeNode();
-                    secondNode.Text = fileSet.title;
-                    secondNode.Tag = fileSet;
-                    foreach (var file in fileSet.files)
-                    {
-                        var leafNode = new TreeNode();
-                        leafNode.Text = file.title;
-                        leafNode.Tag = file;
-                        secondNode.Nodes.Add(leafNode);
-                    }
-                    rootNode.Nodes.Add(secondNode);
-                }
-                treeView.Nodes.Add(rootNode);
-                //break;
-            }
+                treeView.Nodes.Add(CreateRootTreeNode(fileNode));
             treeView.ResumeLayout();
         }
         private void LoadFiles()
         {
-            nodes.Clear();
             if (!rootDir.Exists)
                 rootDir.Create();
-            LoadFilesImpl(rootDir);
             //此函数是在MainWindow构造函数里开子线程调用的，如果load文件过快，此时可能窗口句柄尚未创建，因此要等待
             while (!treeView.IsHandleCreated) Task.Delay(100).Wait();
-            treeView.Invoke(() => this.RefreshMainControl());//编辑控件需要在主线程，借用treeView的invoke
+            treeView.Invoke(() =>
+            {
+                nodes.Clear();
+                treeView.Nodes.Clear();
+                treeView.Nodes.Add(CreateLoadingNode());
+            });//编辑控件需要在主线程，借用treeView的invoke
+
+            var pendingNodes = new List<Node>();
+            LoadFilesImpl(rootDir, pendingNodes);
+            FlushPendingNodes(pendingNodes);
+            treeView.BeginInvoke(() => RemoveLoadingPlaceholders(treeView.Nodes));
             //TODO:sort
         }
-        private void LoadFilesImpl(DirectoryInfo dir)
+        private void LoadFilesImpl(DirectoryInfo dir, List<Node> pendingNodes)
         {
             //注意：GetDirectories/GetFiles很慢，应尽可能并发、减少调用次数
             //同样的查询，合并为一次调用比分多次调用快，但是全部合并为一次在顶层调用仍然很慢，需要拆分并行
             //优化后一次全部加载也很慢，后台执行
-            foreach (var fileInfo in dir.GetFiles())//因为singleFile并不常见，就不优化了
+            try
             {
-                var file = new AFile(fileInfo);
-                if (file.type != AFile.FileType.OTHER)
+                foreach (var fileInfo in dir.EnumerateFiles())//因为singleFile并不常见，就不优化了
                 {
-                    var node = new Node();
-                    node.type = Node.NodeType.SingleFile;
-                    node.title = file.title;
-                    node.rootRir = dir;
-                    node.fileSets.Add(new AFileSet { title = node.title, files = new List<AFile> { file } });
-                    nodes.Add(node);
+                    var file = new AFile(fileInfo);
+                    if (file.type != AFile.FileType.OTHER)
+                        AddPendingNode(CreateSingleFileNode(dir, file), pendingNodes);
                 }
             }
-            var tasks = new List<Task<Node>>();
-            foreach (var dirInfo in dir.GetDirectories())
-                if (workNameRegex.IsMatch(dirInfo.Name))
-                    tasks.Add(Task.Run(() => LoadSingleNodeFromDir(dirInfo)));
-            Task.WaitAll(tasks.ToArray());
-            foreach (var task in tasks)
-                nodes.Add(task.Result);
-            foreach (var dirInfo in dir.GetDirectories())
-                if (seriesNameRegex.IsMatch(dirInfo.Name))
-                    LoadFilesImpl(dirInfo);
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                return;
+            }
+
+            var seriesDirs = new List<DirectoryInfo>();
+            try
+            {
+                foreach (var dirInfo in dir.EnumerateDirectories())
+                    if (workNameRegex.IsMatch(dirInfo.Name))
+                        AddPendingNode(CreateDLSiteNode(dirInfo), pendingNodes);
+                    else if (seriesNameRegex.IsMatch(dirInfo.Name))
+                        seriesDirs.Add(dirInfo);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                return;
+            }
+
+            foreach (var dirInfo in seriesDirs)
+                LoadFilesImpl(dirInfo, pendingNodes);
         }
         private static Node LoadSingleNodeFromDir(DirectoryInfo dirInfo)
         {
-            var node = new Node();
-            string workId = workNameRegex.Match(dirInfo.Name).Groups[0].Value;
-            node.title = dirInfo.Name;
-            node.RJ = workId;
-            node.type = Node.NodeType.DLSite;
-            node.rootRir = dirInfo;
+            var node = CreateDLSiteNode(dirInfo);
+            node.fileSets = LoadFileSetsFromDir(dirInfo);
+            node.loaded = true;
+            return node;
+        }
+        private static List<AFileSet> LoadFileSetsFromDir(DirectoryInfo dirInfo)
+        {
+            var ret = new List<AFileSet>();
             //每个目录下每种类型分别放到一个set里
             //set按目录名排序，set内按文件名排序
             {
@@ -306,11 +325,177 @@ namespace MyAudioPlayer.PlayList
                     foreach (var fileSet in fileSets.Values)
                     {
                         fileSet.files.Sort((l, r) => l.title.CompareTo(r.title));
-                        node.fileSets.Add(fileSet);
+                        ret.Add(fileSet);
                     }
                 }
             }
+            return ret;
+        }
+        private static Node CreateSingleFileNode(DirectoryInfo dir, AFile file)
+        {
+            var node = new Node();
+            node.type = Node.NodeType.SingleFile;
+            node.title = file.title;
+            node.rootRir = dir;
+            node.loaded = true;
+            node.fileSets.Add(new AFileSet { title = node.title, files = new List<AFile> { file } });
             return node;
+        }
+        private static Node CreateDLSiteNode(DirectoryInfo dirInfo)
+        {
+            var node = new Node();
+            string workId = workNameRegex.Match(dirInfo.Name).Groups[0].Value;
+            node.title = dirInfo.Name;
+            node.RJ = workId;
+            node.type = Node.NodeType.DLSite;
+            node.rootRir = dirInfo;
+            node.loaded = false;
+            return node;
+        }
+        private void AddPendingNode(Node node, List<Node> pendingNodes)
+        {
+            pendingNodes.Add(node);
+            if (pendingNodes.Count >= AppendBatchSize)
+                FlushPendingNodes(pendingNodes);
+        }
+        private void FlushPendingNodes(List<Node> pendingNodes)
+        {
+            if (pendingNodes.Count == 0)
+                return;
+            var batch = pendingNodes.ToList();
+            pendingNodes.Clear();
+            treeView.BeginInvoke(() =>
+            {
+                treeView.SuspendLayout();
+                RemoveLoadingPlaceholders(treeView.Nodes);
+                foreach (var node in batch)
+                {
+                    nodes.Add(node);
+                    treeView.Nodes.Add(CreateRootTreeNode(node));
+                }
+                treeView.ResumeLayout();
+            });
+        }
+        private TreeNode CreateRootTreeNode(Node fileNode)
+        {
+            var rootNode = new TreeNode();
+            rootNode.Text = fileNode.title;
+            rootNode.Tag = fileNode;
+            foreach (var fileSet in fileNode.fileSets)
+                rootNode.Nodes.Add(CreateFileSetTreeNode(fileSet));
+            if (fileNode.type == Node.NodeType.DLSite && !fileNode.loaded)
+                rootNode.Nodes.Add(CreateLoadingNode());
+            return rootNode;
+        }
+        private TreeNode CreateFileSetTreeNode(AFileSet fileSet)
+        {
+            var secondNode = new TreeNode();
+            secondNode.Text = fileSet.title;
+            secondNode.Tag = fileSet;
+            foreach (var file in fileSet.files)
+            {
+                var leafNode = new TreeNode();
+                leafNode.Text = file.title;
+                leafNode.Tag = file;
+                secondNode.Nodes.Add(leafNode);
+            }
+            return secondNode;
+        }
+        private static TreeNode CreateLoadingNode()
+        {
+            var node = new TreeNode();
+            node.Text = LoadingPlaceholderText;
+            node.Tag = LoadingPlaceholderTag;
+            return node;
+        }
+        private static bool IsLoadingPlaceholder(TreeNode node)
+        {
+            return ReferenceEquals(node.Tag, LoadingPlaceholderTag);
+        }
+        private static void RemoveLoadingPlaceholders(TreeNodeCollection treeNodes)
+        {
+            for (int i = treeNodes.Count - 1; i >= 0; i--)
+                if (IsLoadingPlaceholder(treeNodes[i]))
+                    treeNodes.RemoveAt(i);
+        }
+        private async Task LoadTreeNodeChildrenAsync(TreeNode treeNode)
+        {
+            if (treeNode.Tag is not Node node)
+                return;
+            if (node.type != Node.NodeType.DLSite || node.loaded)
+                return;
+            if (treeNode.Nodes.Count == 0)
+                treeNode.Nodes.Add(CreateLoadingNode());
+            try
+            {
+                var fileSets = await StartLoadingNode(node);
+                if (treeView.IsDisposed || treeNode.TreeView != treeView)
+                    return;
+                ApplyLoadedFileSets(treeNode, node, fileSets);
+            }
+            catch (Exception e)
+            {
+                if (!treeView.IsDisposed && treeNode.TreeView == treeView)
+                    ApplyLoadError(treeNode, node, e);
+            }
+        }
+        private static Task<List<AFileSet>> StartLoadingNode(Node node)
+        {
+            if (node.loadingTask != null)
+                return node.loadingTask;
+            node.loadingTask = LoadFileSetsFromDirAsync(node.rootRir);
+            return node.loadingTask;
+        }
+        private static async Task<List<AFileSet>> LoadFileSetsFromDirAsync(DirectoryInfo dirInfo)
+        {
+            await FileSetLoadSemaphore.WaitAsync();
+            try
+            {
+                return await Task.Run(() => LoadFileSetsFromDir(dirInfo));
+            }
+            finally
+            {
+                FileSetLoadSemaphore.Release();
+            }
+        }
+        private bool EnsureTreeNodeLoaded(TreeNode treeNode)
+        {
+            var rootNode = GetTopNode(treeNode);
+            if (rootNode is null || rootNode.Tag is not Node node)
+                return true;
+            if (node.type != Node.NodeType.DLSite || node.loaded)
+                return true;
+            try
+            {
+                var fileSets = StartLoadingNode(node).GetAwaiter().GetResult();
+                if (rootNode.TreeView == treeView)
+                    ApplyLoadedFileSets(rootNode, node, fileSets);
+                return true;
+            }
+            catch (Exception e)
+            {
+                if (rootNode.TreeView == treeView)
+                    ApplyLoadError(rootNode, node, e);
+                return false;
+            }
+        }
+        private void ApplyLoadedFileSets(TreeNode rootNode, Node node, List<AFileSet> fileSets)
+        {
+            if (node.loaded)
+                return;
+            node.fileSets = fileSets;
+            node.loaded = true;
+            node.loadingTask = null;
+            rootNode.Nodes.Clear();
+            foreach (var fileSet in node.fileSets)
+                rootNode.Nodes.Add(CreateFileSetTreeNode(fileSet));
+        }
+        private void ApplyLoadError(TreeNode rootNode, Node node, Exception e)
+        {
+            Console.WriteLine(e.Message);
+            node.loadingTask = null;
+            rootNode.Nodes.Clear();
+            rootNode.Nodes.Add(CreateLoadingNode());
         }
         public override FileInfo? GetCurrentFile()
         {
@@ -329,6 +514,8 @@ namespace MyAudioPlayer.PlayList
             }
             else if(currentNode.Tag as Node != null)
             {
+                if (!EnsureTreeNodeLoaded(currentNode))
+                    return null;
                 var fileSet = (currentNode.Tag as Node)!.fileSets;
                 if (fileSet.Count == 0)//不会为null
                     return null;
@@ -345,9 +532,11 @@ namespace MyAudioPlayer.PlayList
             var selectedNode = _node;
             if (selectedNode is null)
                 return;
+            if (selectedNode.Tag is Node)
+                EnsureTreeNodeLoaded(selectedNode);
             if (selectedNode.Tag is Node)//顶级节点,此时播放的肯定是第一个文件(播放完第一个通过MoveCurrent播放第二个时会选中子节点)，删除第一个
             {
-                while (selectedNode.Nodes.Count > 0)//
+                while (selectedNode.Nodes.Count > 0 && !IsLoadingPlaceholder(selectedNode.Nodes[0]))//
                     selectedNode = selectedNode.Nodes[0];
             }
             if (selectedNode.Tag is AFileSet)
@@ -554,6 +743,7 @@ namespace MyAudioPlayer.PlayList
                 var curNode = GetCurrentTopNode();
                 if (curNode is null)
                     return desc;
+                EnsureTreeNodeLoaded(curNode);
                 var node = (curNode.Tag as Node)!;
                 desc += node.title+"\n";
             }
@@ -590,7 +780,7 @@ namespace MyAudioPlayer.PlayList
             System.Diagnostics.Process.Start(
                 new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
         }
-        TreeNode? GetTopNode(TreeNode selectedNode)
+        TreeNode? GetTopNode(TreeNode? selectedNode)
         {
             if (selectedNode is null)
                 return null;
@@ -621,8 +811,12 @@ namespace MyAudioPlayer.PlayList
             if (currentNode is null)
                 return null;
             var curNode = this.currentNode;
-            while (curNode.Nodes.Count > 0)
+            EnsureTreeNodeLoaded(curNode);
+            while (curNode.Nodes.Count > 0 && !IsLoadingPlaceholder(curNode.Nodes[0]))
+            {
                 curNode = curNode.Nodes[0];
+                EnsureTreeNodeLoaded(curNode);
+            }
             if (curNode.Tag is not AFile)
                 return null;
             return curNode;
