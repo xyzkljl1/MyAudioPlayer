@@ -32,6 +32,7 @@
     <PackageReference Include="ManagedBass.Fx" Version="3.1.1" />
     <PackageReference Include="NAudio" Version="2.1.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Svg" Version="3.4.7" />
   </ItemGroup>
 
   <ItemGroup>
@@ -52,6 +53,9 @@
   <ItemGroup>
     <None Update="config.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Assets\Lucide\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="dependency\bass.dll">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>

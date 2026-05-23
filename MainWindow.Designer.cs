@@ -31,7 +31,7 @@
             components = new System.ComponentModel.Container();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(MainWindow));
             DownPanel = new Panel();
-            PlayListTab = new TabControl();
+            PlayListTab = new ThemedTabControl();
             MiddlePanel = new Panel();
             MiddlePanelFlowLayoutPanel = new FlowLayoutPanel();
             LockCheckBox = new CheckBox();
@@ -43,11 +43,12 @@
             PrevButton = new Button();
             PlayButton = new Button();
             NextButton = new Button();
-            playSlider = new TrackBar();
+            playSlider = new ElegantTrackBar();
             UpPanel = new Panel();
+            ThemeButton = new Button();
             OpenWebButton = new Button();
             OpenLocalButton = new Button();
-            volumeSlider = new TrackBar();
+            volumeSlider = new ElegantTrackBar();
             titleBox = new RichTextBox();
             mainTableLayoutPanel = new TableLayoutPanel();
             toolTip = new ToolTip(components);
@@ -250,7 +251,8 @@
             playSlider.TickFrequency = 60;
             // 
             // UpPanel
-            // 
+            //
+            UpPanel.Controls.Add(ThemeButton);
             UpPanel.Controls.Add(OpenWebButton);
             UpPanel.Controls.Add(OpenLocalButton);
             UpPanel.Controls.Add(volumeSlider);
@@ -261,6 +263,17 @@
             UpPanel.Name = "UpPanel";
             UpPanel.Size = new Size(1373, 190);
             UpPanel.TabIndex = 0;
+            //
+            // ThemeButton
+            //
+            ThemeButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            ThemeButton.Font = new Font("Microsoft YaHei UI", 24F, FontStyle.Regular, GraphicsUnit.Point);
+            ThemeButton.Location = new Point(998, 4);
+            ThemeButton.Margin = new Padding(4);
+            ThemeButton.Name = "ThemeButton";
+            ThemeButton.Size = new Size(116, 84);
+            ThemeButton.TabIndex = 12;
+            ThemeButton.UseVisualStyleBackColor = true;
             // 
             // OpenWebButton
             // 
@@ -296,6 +309,7 @@
             volumeSlider.Name = "volumeSlider";
             volumeSlider.Size = new Size(248, 80);
             volumeSlider.TabIndex = 8;
+            volumeSlider.TickFrequency = 10;
             // 
             // titleBox
             // 
@@ -305,7 +319,7 @@
             titleBox.Margin = new Padding(4);
             titleBox.Name = "titleBox";
             titleBox.ReadOnly = true;
-            titleBox.Size = new Size(1103, 180);
+            titleBox.Size = new Size(980, 180);
             titleBox.TabIndex = 0;
             titleBox.Text = "";
             // 
@@ -358,7 +372,7 @@
         #endregion
 
         private Panel DownPanel;
-        private TabControl PlayListTab;
+        private ThemedTabControl PlayListTab;
         private Panel MiddlePanel;
         private Button SelectCurrentButton;
         private Button PrevButton;
@@ -368,11 +382,12 @@
         private Button DelPartButton;
         private Label sliderLabel;
         private Button DelButton;
-        private TrackBar playSlider;
+        private ElegantTrackBar playSlider;
         private Panel UpPanel;
+        private Button ThemeButton;
         private Button OpenWebButton;
         private Button OpenLocalButton;
-        private TrackBar volumeSlider;
+        private ElegantTrackBar volumeSlider;
         private RichTextBox titleBox;
         private TableLayoutPanel mainTableLayoutPanel;
         private ToolTip toolTip;

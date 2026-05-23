@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using MyAudioPlayer.Themes;
 using static MyAudioPlayer.PlayList.PlayListDLSite.AFile;
 
 /*
@@ -47,6 +48,7 @@ namespace MyAudioPlayer.PlayList
         private DirectoryInfo favDir;
         private List<Node> nodes = new List<Node>();
         ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
+        private PlayerTheme currentTheme = PlayerThemes.Resolve(PlayerThemes.DefaultId);
         public PlayListLocalMusic(string _rootDir, MyFileEditEventHandler _begin, MyFileEditEventHandler _end)
         {
             needDelPartButton=false;
@@ -57,6 +59,8 @@ namespace MyAudioPlayer.PlayList
             treeView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
             | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
+            treeView.DrawMode = TreeViewDrawMode.OwnerDrawText;
+            treeView.DrawNode += this.TreeView_DrawNode;
             treeView.NodeMouseDoubleClick += this.NodeDoubleClicked;
             treeView.NodeMouseClick += this.NodeClicked;
             treeView.AllowDrop = true;
@@ -66,6 +70,34 @@ namespace MyAudioPlayer.PlayList
             contextMenuStrip.ItemClicked += this.ContextMenuClicked;
             MountFileEditEvent(_begin, _end);
             Task.Run(LoadFiles);
+        }
+
+        public override void ApplyTheme(PlayerTheme theme)
+        {
+            currentTheme = theme;
+            treeView.BackColor = theme.ListBackColor;
+            treeView.ForeColor = theme.ListForeColor;
+            treeView.LineColor = theme.BorderColor;
+            treeView.BorderStyle = BorderStyle.None;
+            contextMenuStrip.BackColor = theme.SurfaceColor;
+            contextMenuStrip.ForeColor = theme.TextColor;
+            treeView.Invalidate();
+        }
+
+        private void TreeView_DrawNode(object? sender, DrawTreeNodeEventArgs e)
+        {
+            var selected = (e.State & TreeNodeStates.Selected) == TreeNodeStates.Selected;
+            var bounds = new Rectangle(e.Bounds.Left, e.Bounds.Top, treeView.ClientSize.Width - e.Bounds.Left, e.Bounds.Height);
+            using (var brush = new SolidBrush(selected ? currentTheme.ListSelectedBackColor : currentTheme.ListBackColor))
+                e.Graphics.FillRectangle(brush, bounds);
+
+            TextRenderer.DrawText(
+                e.Graphics,
+                e.Node?.Text ?? "",
+                treeView.Font,
+                e.Bounds,
+                selected ? currentTheme.ListSelectedForeColor : currentTheme.ListForeColor,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         }
         //TODO: 添加搜索栏
         public override Control GetMainControl()

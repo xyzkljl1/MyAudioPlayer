@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using MyAudioPlayer.Themes;
 
 namespace MyAudioPlayer.PlayList
 {
@@ -120,6 +121,7 @@ namespace MyAudioPlayer.PlayList
         private HttpClient httpClient;
         private ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
         private ToolStripItem contextMenuStripItemDel;
+        private PlayerTheme currentTheme = PlayerThemes.Resolve(PlayerThemes.DefaultId);
         private int displayedWorkIndex = -1;
         private int currentWorkIndex = -1;
         private int currentFileSetIndex = 0;
@@ -140,8 +142,11 @@ namespace MyAudioPlayer.PlayList
             worksListView.HideSelection = false;
             worksListView.MultiSelect = false;
             worksListView.VirtualMode = true;
-            worksListView.Columns.Add("Title", 300);
-            worksListView.Columns.Add("RJ", 90);
+            worksListView.OwnerDraw = true;
+            worksListView.HeaderStyle = ColumnHeaderStyle.None;
+            worksListView.Columns.Add("", 300);
+            worksListView.DrawColumnHeader += this.WorksListView_DrawColumnHeader;
+            worksListView.DrawSubItem += this.WorksListView_DrawSubItem;
             worksListView.RetrieveVirtualItem += this.WorksListView_RetrieveVirtualItem;
             worksListView.SelectedIndexChanged += this.WorksListView_SelectedIndexChanged;
             worksListView.DoubleClick += this.WorksListView_DoubleClick;
@@ -158,12 +163,48 @@ namespace MyAudioPlayer.PlayList
             Task.Run(LoadFiles);
         }
 
+        public override void ApplyTheme(PlayerTheme theme)
+        {
+            currentTheme = theme;
+            worksListView.BackColor = theme.ListBackColor;
+            worksListView.ForeColor = theme.ListForeColor;
+            worksListView.BorderStyle = BorderStyle.None;
+            contextMenuStrip.BackColor = theme.SurfaceColor;
+            contextMenuStrip.ForeColor = theme.TextColor;
+            worksListView.Invalidate();
+        }
+
+        private void WorksListView_DrawColumnHeader(object? sender, DrawListViewColumnHeaderEventArgs e)
+        {
+            using var brush = new SolidBrush(currentTheme.ListBackColor);
+            e.Graphics.FillRectangle(brush, e.Bounds);
+        }
+
+        private void WorksListView_DrawSubItem(object? sender, DrawListViewSubItemEventArgs e)
+        {
+            bool selected = e.Item?.Selected == true;
+            var bounds = new Rectangle(0, e.Bounds.Top, worksListView.ClientSize.Width, e.Bounds.Height);
+            using (var backgroundBrush = new SolidBrush(selected ? currentTheme.ListSelectedBackColor : currentTheme.ListBackColor))
+                e.Graphics.FillRectangle(backgroundBrush, bounds);
+
+            using (var linePen = new Pen(Color.FromArgb(60, currentTheme.BorderColor)))
+                e.Graphics.DrawLine(linePen, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
+
+            var textBounds = new Rectangle(e.Bounds.Left + 6, e.Bounds.Top, Math.Max(1, e.Bounds.Width - 12), e.Bounds.Height);
+            TextRenderer.DrawText(
+                e.Graphics,
+                e.SubItem?.Text ?? "",
+                worksListView.Font,
+                textBounds,
+                selected ? currentTheme.ListSelectedForeColor : currentTheme.ListForeColor,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+
         private void ResizeWorkListColumns()
         {
-            if (worksListView.Columns.Count < 2)
+            if (worksListView.Columns.Count < 1)
                 return;
-            worksListView.Columns[1].Width = 90;
-            worksListView.Columns[0].Width = Math.Max(120, worksListView.ClientSize.Width - worksListView.Columns[1].Width - 8);
+            worksListView.Columns[0].Width = Math.Max(120, worksListView.ClientSize.Width - 8);
         }
 
         public override Control GetMainControl()
@@ -180,7 +221,7 @@ namespace MyAudioPlayer.PlayList
             }
 
             var item = visibleItems[e.ItemIndex];
-            e.Item = new ListViewItem(new[] { GetTreeText(item), GetTreeRjText(item) });
+            e.Item = new ListViewItem(GetTreeText(item));
         }
 
         private void WorksListView_SelectedIndexChanged(object? sender, EventArgs e)
@@ -536,11 +577,6 @@ namespace MyAudioPlayer.PlayList
             if (!CanExpandItem(item))
                 return "    ";
             return item.expanded ? "[-] " : "[+] ";
-        }
-
-        private static string GetTreeRjText(WorkTreeItem item)
-        {
-            return item.kind == WorkTreeItemKind.Work && item.work is Node node ? node.RJ : "";
         }
 
         private static string GetIndent(WorkTreeItem item)

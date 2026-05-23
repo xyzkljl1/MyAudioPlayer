@@ -15,6 +15,7 @@ namespace MyAudioPlayer
         public static string DLServerAddress = "";
         public static string DLSiteFavDir = "";
         public static string MusicFavDir = "";
+        public static string PlayerThemeId = "";
         public static void LoadJson()
         {
             var path = "config.json";
@@ -60,6 +61,20 @@ namespace MyAudioPlayer
                         }
                 }
             }
+        }
+
+        public static void SaveTheme()
+        {
+            var path = "config.json";
+            JObject jsonObject = new JObject();
+            if (System.IO.File.Exists(path))
+            {
+                using var reader = new JsonTextReader(new System.IO.StreamReader(path));
+                jsonObject = (JObject)JToken.ReadFrom(reader);
+            }
+
+            jsonObject[nameof(PlayerThemeId)] = PlayerThemeId;
+            System.IO.File.WriteAllText(path, jsonObject.ToString(Formatting.Indented));
         }
     }
 }
