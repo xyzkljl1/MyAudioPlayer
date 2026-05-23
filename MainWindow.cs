@@ -351,9 +351,25 @@ namespace MyAudioPlayer
 
         private void MountResponsiveLayout()
         {
+            UpPanel.Resize += delegate { LayoutTopControls(); };
             MiddlePanel.Resize += delegate { LayoutPlaybackControls(); };
             MiddlePanelFlowLayoutPanel.SizeChanged += delegate { LayoutPlaybackControls(); };
+            LayoutTopControls();
             LayoutPlaybackControls();
+        }
+
+        private void LayoutTopControls()
+        {
+            int rightControlsLeft = ThemeButton.Left;
+            int rightControlsRight = OpenLocalButton.Right;
+            int volumeWidth = Math.Max(120, rightControlsRight - rightControlsLeft);
+
+            titleBox.Width = Math.Max(120, rightControlsLeft - titleBox.Left - 8);
+            volumeSlider.Bounds = new Rectangle(
+                rightControlsLeft,
+                volumeSlider.Top,
+                volumeWidth,
+                volumeSlider.Height);
         }
 
         private void LayoutPlaybackControls()

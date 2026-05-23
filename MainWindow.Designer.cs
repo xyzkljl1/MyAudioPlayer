@@ -303,11 +303,11 @@
             // volumeSlider
             // 
             volumeSlider.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-            volumeSlider.Location = new Point(1121, 104);
+            volumeSlider.Location = new Point(998, 104);
             volumeSlider.Margin = new Padding(4);
             volumeSlider.Maximum = 100;
             volumeSlider.Name = "volumeSlider";
-            volumeSlider.Size = new Size(248, 80);
+            volumeSlider.Size = new Size(371, 80);
             volumeSlider.TabIndex = 8;
             volumeSlider.TickFrequency = 10;
             // 
