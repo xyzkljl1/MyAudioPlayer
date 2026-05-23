@@ -9,6 +9,7 @@ namespace MyAudioPlayer
         private const int ButtonSize = 44;
         private const int SmallIconSize = 25;
         private const int SnapDistance = 24;
+        private const int TopSnapDistance = 96;
 
         private readonly Button playButton = new Button();
         private readonly Button previousButton = new Button();
@@ -16,6 +17,7 @@ namespace MyAudioPlayer
         private readonly Button favoriteButton = new Button();
         private readonly Button deleteButton = new Button();
         private readonly Button deletePartButton = new Button();
+        private readonly Button minimizeButton = new Button();
         private readonly MarqueeLabel titleLabel = new MarqueeLabel();
         private readonly Label timeLabel = new Label();
         private readonly ElegantTrackBar playSlider = new ElegantTrackBar();
@@ -55,8 +57,9 @@ namespace MyAudioPlayer
             MinimizeBox = false;
             MinimumSize = ClientSize;
             MaximumSize = ClientSize;
-            ShowInTaskbar = false;
+            ShowInTaskbar = true;
             StartPosition = FormStartPosition.Manual;
+            Text = "万万静听 - 迷你模式";
             TopMost = true;
 
             ConfigureButton(playButton, "播放/暂停");
@@ -65,6 +68,7 @@ namespace MyAudioPlayer
             ConfigureButton(favoriteButton, "收藏当前");
             ConfigureButton(deleteButton, "删除当前");
             ConfigureButton(deletePartButton, "删除当前文件或文件集");
+            ConfigureButton(minimizeButton, "最小化");
 
             timeLabel.AutoSize = false;
             timeLabel.TextAlign = ContentAlignment.MiddleCenter;
@@ -82,6 +86,7 @@ namespace MyAudioPlayer
             Controls.Add(favoriteButton);
             Controls.Add(deleteButton);
             Controls.Add(deletePartButton);
+            Controls.Add(minimizeButton);
 
             playButton.Click += delegate { PlayPauseClicked?.Invoke(this, EventArgs.Empty); };
             previousButton.Click += delegate { PreviousClicked?.Invoke(this, EventArgs.Empty); };
@@ -89,6 +94,7 @@ namespace MyAudioPlayer
             favoriteButton.Click += delegate { FavoriteClicked?.Invoke(this, EventArgs.Empty); };
             deleteButton.Click += delegate { DeleteClicked?.Invoke(this, EventArgs.Empty); };
             deletePartButton.Click += delegate { DeletePartClicked?.Invoke(this, EventArgs.Empty); };
+            minimizeButton.Click += delegate { WindowState = FormWindowState.Minimized; };
             playSlider.MouseDown += delegate { SeekStarted?.Invoke(this, EventArgs.Empty); };
             playSlider.MouseUp += delegate { SeekEnded?.Invoke(this, EventArgs.Empty); };
             playSlider.Scroll += delegate { SeekRequested?.Invoke(this, EventArgs.Empty); };
@@ -119,6 +125,7 @@ namespace MyAudioPlayer
         public void PlaceNearTop(Screen screen)
         {
             var area = screen.WorkingArea;
+            WindowState = FormWindowState.Normal;
             Location = new Point(
                 area.Left + Math.Max(0, (area.Width - Width) / 2),
                 area.Top);
@@ -144,6 +151,7 @@ namespace MyAudioPlayer
             StyleButton(favoriteButton, theme.ButtonBackColor, theme.FavoriteColor, theme.BorderColor);
             StyleButton(deleteButton, theme.ButtonBackColor, theme.DeleteColor, theme.BorderColor);
             StyleButton(deletePartButton, theme.ButtonBackColor, theme.DeletePartColor, theme.BorderColor);
+            StyleButton(minimizeButton, theme.ButtonBackColor, theme.ButtonIconColor, theme.BorderColor);
             UpdateButtonIcons();
             ApplyRoundedRegion();
             Invalidate();
@@ -166,6 +174,7 @@ namespace MyAudioPlayer
             favoriteButton.Enabled = isLoaded;
             deleteButton.Enabled = isLoaded;
             deletePartButton.Enabled = isLoaded && canDeletePart;
+            minimizeButton.Enabled = true;
             if (playStateChanged)
                 SetButtonIcon(playButton, isPlaying ? "pause" : "play", theme.AccentIconColor, SmallIconSize);
         }
@@ -259,7 +268,8 @@ namespace MyAudioPlayer
             nextButton.Bounds = new Rectangle(112, top, ButtonSize, ButtonSize);
 
             int right = Width - 12;
-            deletePartButton.Bounds = new Rectangle(right - ButtonSize, top, ButtonSize, ButtonSize);
+            minimizeButton.Bounds = new Rectangle(right - ButtonSize, top, ButtonSize, ButtonSize);
+            deletePartButton.Bounds = new Rectangle(minimizeButton.Left - ButtonSize - 6, top, ButtonSize, ButtonSize);
             deleteButton.Bounds = new Rectangle(deletePartButton.Left - ButtonSize - 6, top, ButtonSize, ButtonSize);
             favoriteButton.Bounds = new Rectangle(deleteButton.Left - ButtonSize - 6, top, ButtonSize, ButtonSize);
             timeLabel.Bounds = new Rectangle(favoriteButton.Left - 98, top + 1, 88, 42);
@@ -278,6 +288,27 @@ namespace MyAudioPlayer
             SetButtonIcon(favoriteButton, "heart", theme.FavoriteColor, SmallIconSize);
             SetButtonIcon(deleteButton, "trash-2", theme.DeleteColor, SmallIconSize);
             SetButtonIcon(deletePartButton, "file-x", theme.DeletePartColor, SmallIconSize);
+            SetMinimizeIcon();
+        }
+
+        private void SetMinimizeIcon()
+        {
+            var oldImage = minimizeButton.Image;
+            var bitmap = new Bitmap(SmallIconSize, SmallIconSize);
+            using (var graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using var pen = new Pen(theme.ButtonIconColor, 2.6F)
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round
+                };
+                float y = SmallIconSize * 0.64F;
+                graphics.DrawLine(pen, SmallIconSize * 0.25F, y, SmallIconSize * 0.75F, y);
+            }
+            minimizeButton.Image = bitmap;
+            oldImage?.Dispose();
+            minimizeButton.Text = "";
         }
 
         private void SetButtonIcon(Button button, string iconName, Color color, int size)
@@ -341,9 +372,11 @@ namespace MyAudioPlayer
                 return;
 
             var cursor = Cursor.Position;
+            var area = Screen.FromPoint(cursor).WorkingArea;
+            int nextY = dragWindowStart.Y + cursor.Y - dragCursorStart.Y;
             Location = new Point(
                 dragWindowStart.X + cursor.X - dragCursorStart.X,
-                dragWindowStart.Y + cursor.Y - dragCursorStart.Y);
+                Math.Max(area.Top, nextY));
         }
 
         private void OnDragSurfaceMouseUp(object? sender, MouseEventArgs e)
@@ -367,7 +400,7 @@ namespace MyAudioPlayer
                 x = area.Left;
             if (Math.Abs(Right - area.Right) <= SnapDistance)
                 x = area.Right - Width;
-            if (Math.Abs(Top - area.Top) <= SnapDistance)
+            if (Top < area.Top || Math.Abs(Top - area.Top) <= TopSnapDistance)
                 y = area.Top;
             if (Math.Abs(Bottom - area.Bottom) <= SnapDistance)
                 y = area.Bottom - Height;

@@ -28,7 +28,6 @@ namespace MyAudioPlayer
         private Rectangle normalBoundsBeforeMini;
         private FormWindowState normalWindowStateBeforeMini;
         private bool normalTopMostBeforeMini;
-        private bool hasPlacedMiniPlayer;
 
         private sealed class ButtonVisualStyle
         {
@@ -288,11 +287,7 @@ namespace MyAudioPlayer
             player.TopMost = true;
             player.ApplyTheme(currentTheme);
             SyncMiniPlayer();
-            if (!hasPlacedMiniPlayer)
-            {
-                player.PlaceNearTop(Screen.FromControl(this));
-                hasPlacedMiniPlayer = true;
-            }
+            player.PlaceNearTop(Screen.FromControl(this));
             player.Show();
             player.Activate();
             Hide();
