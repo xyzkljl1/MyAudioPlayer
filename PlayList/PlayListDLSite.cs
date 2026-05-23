@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,6 +15,7 @@ namespace MyAudioPlayer.PlayList
             public string title = "";
             public List<AFile> files = new List<AFile>();
         }
+
         public class AFile
         {
             public enum FileType
@@ -25,9 +25,11 @@ namespace MyAudioPlayer.PlayList
                 MP3,
                 FLAC
             };
+
             public string title = "";
             public FileInfo fileInfo;
             public FileType type = FileType.OTHER;
+
             public AFile(FileInfo _fileInfo)
             {
                 fileInfo = _fileInfo;
@@ -35,7 +37,7 @@ namespace MyAudioPlayer.PlayList
                 var ext = fileInfo.Extension.ToLower();
                 if (ext == ".wav" || ext == ".wave")
                     type = FileType.WAV;
-                else if (ext == ".mp3" || ext == ".mp4" || ext==".m4a" ||ext==".avi")
+                else if (ext == ".mp3" || ext == ".mp4" || ext == ".m4a" || ext == ".avi")
                     type = FileType.MP3;
                 else if (ext == ".flac")
                     type = FileType.FLAC;
@@ -43,6 +45,7 @@ namespace MyAudioPlayer.PlayList
                     type = FileType.OTHER;
             }
         };
+
         public class Node
         {
             public enum NodeType
@@ -51,207 +54,276 @@ namespace MyAudioPlayer.PlayList
                 DLSite,
                 SingleFile
             };
+
             public string title = "";
             public DirectoryInfo rootRir = new DirectoryInfo(".");
             public string RJ = "";
             public NodeType type = NodeType.Default;
             public bool IsDLSite() { return type == NodeType.DLSite; }
             public List<AFileSet> fileSets = new List<AFileSet>();
-            public bool loaded = false;//是否已创建子节点
+            public bool loaded = false;
             public Task<List<AFileSet>>? loadingTask = null;
         };
+
+        private enum ContextTarget
+        {
+            None,
+            WorkList,
+            FileTree
+        }
+
+        private enum CursorKind
+        {
+            None,
+            Work,
+            FileSet,
+            File
+        }
+
         public static Regex workNameRegex = new Regex("^[RVBJ]{0,2}[0-9]{3,8}");
         public static Regex seriesNameRegex = new Regex("^S ");
         private const int ScanPublishBatchSize = 500;
-        private const int UiAppendTimeBudgetMs = 8;
-        private const int UiAppendSafetyLimit = 1000;
         // Z:\ASMR_ReliableR benchmark, 36,891 works / 566,674 files:
         // sequential 1556s, 4-way 667s, 8-way 612s, 16-way 707s, unlimited 858s.
         // Directory scans are IO-bound; 8 kept the disk busy without flooding the thread pool.
         private const int MaxConcurrentFileSetLoads = 8;
         private static readonly SemaphoreSlim FileSetLoadSemaphore = new SemaphoreSlim(MaxConcurrentFileSetLoads);
-        private static readonly object LazyLoadPlaceholderTag = new object();
-        private TreeView treeView = new TreeView();
-        private TreeNode? currentNode = null;//当前(正在播放的)曲目，和Selected不同，双击触发
+
+        private SplitContainer mainControl = new SplitContainer();
+        private ListView worksListView = new ListView();
+        private TreeView fileTreeView = new TreeView();
         private DirectoryInfo rootDir;
         private string dlServer;
         private DirectoryInfo favDir;
         private List<Node> nodes = new List<Node>();
-        private Queue<Node> pendingUiNodes = new Queue<Node>();
-        private bool appendUiNodesScheduled = false;
         private HttpClient httpClient;
-        ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
-        ToolStripItem contextMenuStripItemDel;
-        public PlayListDLSite(string _rootDir,MyFileEditEventHandler _begin,MyFileEditEventHandler _end)
+        private ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
+        private ToolStripItem contextMenuStripItemDel;
+        private ContextTarget contextTarget = ContextTarget.None;
+        private int displayedWorkIndex = -1;
+        private int currentWorkIndex = -1;
+        private int currentFileSetIndex = 0;
+        private int currentFileIndex = 0;
+        private CursorKind currentCursorKind = CursorKind.None;
+        private int fileTreeLoadVersion = 0;
+        private bool splitterDistanceInitialized = false;
+        private event TreeNodeMouseClickEventHandler? mountedDoubleClickHandlers;
+
+        public PlayListDLSite(string _rootDir, MyFileEditEventHandler _begin, MyFileEditEventHandler _end)
         {
             rootDir = new DirectoryInfo(_rootDir);
             dlServer = Config.DLServerAddress;
             favDir = new DirectoryInfo(Config.DLSiteFavDir);
             Title = "DL-" + rootDir.Name;
-            treeView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom)
-            | System.Windows.Forms.AnchorStyles.Left)
-            | System.Windows.Forms.AnchorStyles.Right)));
-            treeView.NodeMouseDoubleClick += this.NodeDoubleClicked;
-            treeView.NodeMouseClick += this.NodeClicked;
-            treeView.BeforeExpand += this.NodeBeforeExpand;
-            //treeView.Scrollable = true;//需要设置tabPage.AutoScroll，而不是treeView.Scrollable
+
+            mainControl.Dock = DockStyle.Fill;
+            mainControl.Orientation = Orientation.Vertical;
+            mainControl.Resize += delegate { InitializeSplitterDistance(); };
+
+            worksListView.Dock = DockStyle.Fill;
+            worksListView.View = View.Details;
+            worksListView.FullRowSelect = true;
+            worksListView.HideSelection = false;
+            worksListView.MultiSelect = false;
+            worksListView.VirtualMode = true;
+            worksListView.Columns.Add("Title", 300);
+            worksListView.Columns.Add("RJ", 90);
+            worksListView.RetrieveVirtualItem += this.WorksListView_RetrieveVirtualItem;
+            worksListView.SelectedIndexChanged += this.WorksListView_SelectedIndexChanged;
+            worksListView.DoubleClick += this.WorksListView_DoubleClick;
+            worksListView.MouseClick += this.WorksListView_MouseClick;
+            worksListView.Resize += delegate { ResizeWorkListColumns(); };
+
+            fileTreeView.Dock = DockStyle.Fill;
+            fileTreeView.NodeMouseDoubleClick += this.FileTreeView_NodeMouseDoubleClick;
+            fileTreeView.NodeMouseClick += this.FileTreeView_NodeMouseClick;
+
+            mainControl.Panel1.Controls.Add(worksListView);
+            mainControl.Panel2.Controls.Add(fileTreeView);
+
             httpClient = new HttpClient();
             contextMenuStrip.Items.Add("Fav");
             contextMenuStrip.Items.Add("DelPart");
             contextMenuStripItemDel = contextMenuStrip.Items.Add("Del");
             contextMenuStrip.ItemClicked += this.ContextMenuClicked;
+
             MountFileEditEvent(_begin, _end);
             Task.Run(LoadFiles);
         }
-        //TODO: 添加搜索栏
+
+        private void InitializeSplitterDistance()
+        {
+            if (splitterDistanceInitialized || mainControl.Width < 500)
+                return;
+            mainControl.SplitterDistance = Math.Min(360, mainControl.Width - mainControl.Panel2MinSize - mainControl.SplitterWidth);
+            splitterDistanceInitialized = true;
+        }
+
+        private void ResizeWorkListColumns()
+        {
+            if (worksListView.Columns.Count < 2)
+                return;
+            worksListView.Columns[1].Width = 90;
+            worksListView.Columns[0].Width = Math.Max(120, worksListView.ClientSize.Width - worksListView.Columns[1].Width - 8);
+        }
+
         public override Control GetMainControl()
         {
-            return treeView;
+            return mainControl;
         }
-        private void NodeDoubleClicked(object? sender, TreeNodeMouseClickEventArgs e)
+
+        private void WorksListView_RetrieveVirtualItem(object? sender, RetrieveVirtualItemEventArgs e)
         {
-            currentNode = treeView.SelectedNode;
+            if (!IsValidWorkIndex(e.ItemIndex))
+            {
+                e.Item = new ListViewItem("");
+                return;
+            }
+
+            var node = nodes[e.ItemIndex];
+            e.Item = new ListViewItem(new[] { node.title, node.RJ });
         }
-        private void NodeClicked(object? sender, TreeNodeMouseClickEventArgs e)
+
+        private async void WorksListView_SelectedIndexChanged(object? sender, EventArgs e)
+        {
+            int selectedIndex = GetSelectedWorkIndex();
+            if (selectedIndex < 0)
+                return;
+
+            await LoadWorkIntoFileTreeAsync(selectedIndex);
+        }
+
+        private void WorksListView_DoubleClick(object? sender, EventArgs e)
+        {
+            int selectedIndex = GetSelectedWorkIndex();
+            if (selectedIndex < 0)
+                return;
+
+            SetCurrentToWork(selectedIndex);
+            _ = LoadWorkIntoFileTreeAsync(selectedIndex, true);
+            RaiseMountedDoubleClickHandlers();
+        }
+
+        private void WorksListView_MouseClick(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right)
+                return;
+
+            var item = worksListView.GetItemAt(e.X, e.Y);
+            if (item is null)
+                return;
+
+            worksListView.SelectedIndices.Clear();
+            worksListView.SelectedIndices.Add(item.Index);
+            contextTarget = ContextTarget.WorkList;
+            EnsureDelContextMenuItemVisible(true);
+            contextMenuStrip.Show(worksListView, e.X, e.Y);
+        }
+
+        private void FileTreeView_NodeMouseClick(object? sender, TreeNodeMouseClickEventArgs e)
         {
             if (e.Button != MouseButtons.Right)
                 return;
             if (e.Node == null)
                 return;
-            treeView.SelectedNode = e.Node;
-            if(e.Node!=null)
-            {
-                if (e.Node.Tag as Node is not null)//只在顶级节点上显示Del，防止手抖误删
-                {
-                    if (!contextMenuStrip.Items.Contains(contextMenuStripItemDel))
-                        contextMenuStrip.Items.Add(contextMenuStripItemDel);
-                }
-                else
-                {
-                    if (contextMenuStrip.Items.Contains(contextMenuStripItemDel))
-                        contextMenuStrip.Items.Remove(contextMenuStripItemDel);
-                }
-                contextMenuStrip.Show(treeView, e.X, e.Y);
-            }
+
+            fileTreeView.SelectedNode = e.Node;
+            contextTarget = ContextTarget.FileTree;
+            EnsureDelContextMenuItemVisible(false);
+            contextMenuStrip.Show(fileTreeView, e.X, e.Y);
         }
-        private async void NodeBeforeExpand(object? sender, TreeViewCancelEventArgs e)
+
+        private void FileTreeView_NodeMouseDoubleClick(object? sender, TreeNodeMouseClickEventArgs e)
         {
-            if (e.Node?.Tag is not Node node)
+            if (!TrySetCurrentFromFileTreeNode(e.Node))
                 return;
-            if (node.type != Node.NodeType.DLSite || node.loaded)
-                return;
-            e.Cancel = true;
-            await LoadTreeNodeChildrenAsync(e.Node, true);
+
+            RaiseMountedDoubleClickHandlers();
         }
+
         private void ContextMenuClicked(object? sender, ToolStripItemClickedEventArgs e)
         {
-            MyFileEditEventArgs tmp_args=new MyFileEditEventArgs();
+            MyFileEditEventArgs tmp_args = new MyFileEditEventArgs();
             if (e.ClickedItem.Text == "Fav")
             {
                 RasieFileEditBeginEvent(tmp_args);
-                FavNode(treeView.SelectedNode);
+                FavContextTarget();
                 RasieFileEditEndEvent(tmp_args);
             }
-            else if(e.ClickedItem.Text =="Del")
+            else if (e.ClickedItem.Text == "Del")
             {
                 RasieFileEditBeginEvent(tmp_args);
-                DeleteNode(treeView.SelectedNode);
+                DeleteContextTarget();
                 RasieFileEditEndEvent(tmp_args);
             }
-            else if(e.ClickedItem.Text=="DelPart")
+            else if (e.ClickedItem.Text == "DelPart")
             {
                 RasieFileEditBeginEvent(tmp_args);
-                DeleteNodePart(treeView.SelectedNode);
+                DeletePartContextTarget();
                 RasieFileEditEndEvent(tmp_args);
             }
         }
+
         public override void MountDoubleClickEvent(TreeNodeMouseClickEventHandler handler)
         {
-            treeView.NodeMouseDoubleClick += handler;
+            mountedDoubleClickHandlers += handler;
         }
+
         public override void UnmountDoubleClickEvent(TreeNodeMouseClickEventHandler handler)
         {
-            treeView.NodeMouseDoubleClick -= handler;
+            mountedDoubleClickHandlers -= handler;
         }
+
         public override void MoveCurrent(int offset)
         {
             if (Math.Abs(offset) != 1)
                 throw new NotImplementedException();
-            if (this.currentNode == null)//如果没有选中任何节点，选中第一个
+            if (nodes.Count == 0)
+                return;
+
+            if (!IsValidWorkIndex(currentWorkIndex))
             {
-                if (treeView.Nodes.Count == 0)
-                    return;
-                this.currentNode = treeView.Nodes[0];
+                SetCurrentToWork(offset > 0 ? 0 : nodes.Count - 1);
                 return;
             }
-            //先找到当前叶节点
-            var currentNode = this.currentNode!;//注意不使用treeView.selectedNode
-            EnsureTreeNodeLoaded(currentNode);
-            while (currentNode.Nodes.Count > 0 && !IsLazyLoadPlaceholder(currentNode.Nodes[0]))//
-            {
-                currentNode = currentNode.Nodes[0];
-                EnsureTreeNodeLoaded(currentNode);
-            }
-            TreeNode nextNode;
-            if (offset == 1)
-            {
-                var parentNode = currentNode;
-                while (parentNode != null && parentNode.NextNode == null)//找兄弟节点，如果找不到就找上级的兄弟节点
-                    parentNode = parentNode.Parent;
-                //找到null说明到头了，直接取列表第一项
-                if (parentNode == null)
-                    nextNode = treeView.Nodes[0];
-                else
-                    nextNode = parentNode.NextNode;
-            }
+
+            if (offset > 0)
+                MoveCurrentNext();
             else
-            {
-                var parentNode = currentNode;
-                while (parentNode != null && parentNode.PrevNode == null)//找兄弟节点，如果找不到就找上级的兄弟节点
-                    parentNode = parentNode.Parent;
-                //找到null说明到头了，直接取列表最后一项
-                if (parentNode == null)
-                    nextNode = treeView.Nodes[treeView.Nodes.Count - 1];
-                else
-                    nextNode = parentNode.PrevNode;
-            }
-            this.currentNode = nextNode;
+                MoveCurrentPrevious();
         }
+
         public void RefreshMainControl()
         {
-            treeView.SuspendLayout();
-            treeView.Nodes.Clear();
-            foreach (var fileNode in this.nodes)
-                treeView.Nodes.Add(CreateRootTreeNode(fileNode));
-            treeView.ResumeLayout();
+            worksListView.VirtualListSize = nodes.Count;
+            worksListView.Invalidate();
+            _ = LoadWorkIntoFileTreeAsync(displayedWorkIndex);
         }
+
         private void LoadFiles()
         {
             if (!rootDir.Exists)
                 rootDir.Create();
-            //此函数是在MainWindow构造函数里开子线程调用的，如果load文件过快，此时可能窗口句柄尚未创建，因此要等待
-            while (!treeView.IsHandleCreated) Task.Delay(100).Wait();
-            treeView.Invoke(() =>
+            while (!worksListView.IsHandleCreated) Task.Delay(100).Wait();
+            worksListView.Invoke(() =>
             {
                 nodes.Clear();
-                pendingUiNodes.Clear();
-                appendUiNodesScheduled = false;
-                treeView.Nodes.Clear();
-            });//编辑控件需要在主线程，借用treeView的invoke
+                currentWorkIndex = -1;
+                displayedWorkIndex = -1;
+                worksListView.VirtualListSize = 0;
+                fileTreeView.Nodes.Clear();
+            });
 
             var pendingNodes = new List<Node>();
             LoadFilesImpl(rootDir, pendingNodes);
             FlushPendingNodes(pendingNodes);
-            //TODO:sort
         }
+
         private void LoadFilesImpl(DirectoryInfo dir, List<Node> pendingNodes)
         {
-            //注意：GetDirectories/GetFiles很慢，应尽可能并发、减少调用次数
-            //同样的查询，合并为一次调用比分多次调用快，但是全部合并为一次在顶层调用仍然很慢，需要拆分并行
-            //优化后一次全部加载也很慢，后台执行
             try
             {
-                foreach (var fileInfo in dir.EnumerateFiles())//因为singleFile并不常见，就不优化了
+                foreach (var fileInfo in dir.EnumerateFiles())
                 {
                     var file = new AFile(fileInfo);
                     if (file.type != AFile.FileType.OTHER)
@@ -282,40 +354,29 @@ namespace MyAudioPlayer.PlayList
             foreach (var dirInfo in seriesDirs)
                 LoadFilesImpl(dirInfo, pendingNodes);
         }
-        private static Node LoadSingleNodeFromDir(DirectoryInfo dirInfo)
-        {
-            var node = CreateDLSiteNode(dirInfo);
-            node.fileSets = LoadFileSetsFromDir(dirInfo);
-            node.loaded = true;
-            return node;
-        }
+
         private static List<AFileSet> LoadFileSetsFromDir(DirectoryInfo dirInfo)
         {
             var ret = new List<AFileSet>();
-            //每个目录下每种类型分别放到一个set里
-            //set按目录名排序，set内按文件名排序
+            var subDirs = new List<DirectoryInfo>();
+            subDirs.Add(dirInfo);
+            subDirs.AddRange(dirInfo.GetDirectories("*.*", SearchOption.AllDirectories));
+            subDirs.Sort((l, r) => l.FullName.CompareTo(r.FullName));
+            var fileMap = new Dictionary<string, List<FileInfo>>();
             {
-                var subDirs = new List<DirectoryInfo>();
-                subDirs.Add(dirInfo);
-                subDirs.AddRange(dirInfo.GetDirectories("*.*", SearchOption.AllDirectories));
-                subDirs.Sort((l, r) => l.FullName.CompareTo(r.FullName));
-                var fileMap=new Dictionary<string, List<FileInfo>>();
+                var files = dirInfo.GetFiles("*.*", SearchOption.AllDirectories);
+                foreach (var file in files)
                 {
-                    var files = dirInfo.GetFiles("*.*", SearchOption.AllDirectories);
-                    foreach(var file in files)
-                    {
-                        if(!fileMap.ContainsKey(file.Directory!.FullName))
-                            fileMap.Add(file.Directory!.FullName, new List<FileInfo>());
-                        fileMap[file.Directory!.FullName].Add(file);
-                    }
+                    if (!fileMap.ContainsKey(file.Directory!.FullName))
+                        fileMap.Add(file.Directory!.FullName, new List<FileInfo>());
+                    fileMap[file.Directory!.FullName].Add(file);
                 }
-                foreach (var subDir in subDirs)
-                {
-                    var fileSets = new Dictionary<AFile.FileType, AFileSet>();
-                    //foreach (var fileInfo in subDir.GetFiles())
-                    if(fileMap.ContainsKey(subDir.FullName))
+            }
+            foreach (var subDir in subDirs)
+            {
+                var fileSets = new Dictionary<AFile.FileType, AFileSet>();
+                if (fileMap.ContainsKey(subDir.FullName))
                     foreach (var fileInfo in fileMap[subDir.FullName])
-
                     {
                         var file = new AFile(fileInfo);
                         var afileType = file.type;
@@ -329,15 +390,15 @@ namespace MyAudioPlayer.PlayList
                             });
                         fileSets[afileType].files.Add(file);
                     }
-                    foreach (var fileSet in fileSets.Values)
-                    {
-                        fileSet.files.Sort((l, r) => l.title.CompareTo(r.title));
-                        ret.Add(fileSet);
-                    }
+                foreach (var fileSet in fileSets.Values)
+                {
+                    fileSet.files.Sort((l, r) => l.title.CompareTo(r.title));
+                    ret.Add(fileSet);
                 }
             }
             return ret;
         }
+
         private static Node CreateSingleFileNode(DirectoryInfo dir, AFile file)
         {
             var node = new Node();
@@ -348,6 +409,7 @@ namespace MyAudioPlayer.PlayList
             node.fileSets.Add(new AFileSet { title = node.title, files = new List<AFile> { file } });
             return node;
         }
+
         private static Node CreateDLSiteNode(DirectoryInfo dirInfo)
         {
             var node = new Node();
@@ -359,70 +421,28 @@ namespace MyAudioPlayer.PlayList
             node.loaded = false;
             return node;
         }
+
         private void AddPendingNode(Node node, List<Node> pendingNodes)
         {
             pendingNodes.Add(node);
             if (pendingNodes.Count >= ScanPublishBatchSize)
                 FlushPendingNodes(pendingNodes);
         }
+
         private void FlushPendingNodes(List<Node> pendingNodes)
         {
             if (pendingNodes.Count == 0)
                 return;
             var batch = pendingNodes.ToList();
             pendingNodes.Clear();
-            treeView.BeginInvoke(() =>
+            worksListView.BeginInvoke(() =>
             {
-                foreach (var node in batch)
-                    pendingUiNodes.Enqueue(node);
-                ScheduleAppendPendingUiNodes();
+                nodes.AddRange(batch);
+                worksListView.VirtualListSize = nodes.Count;
+                worksListView.Invalidate();
             });
         }
-        private void ScheduleAppendPendingUiNodes()
-        {
-            if (appendUiNodesScheduled)
-                return;
-            appendUiNodesScheduled = true;
-            treeView.BeginInvoke(() => ProcessPendingUiNodes());
-        }
-        private void ProcessPendingUiNodes()
-        {
-            appendUiNodesScheduled = false;
-            if (treeView.IsDisposed)
-                return;
-            treeView.BeginUpdate();
-            try
-            {
-                var stopwatch = Stopwatch.StartNew();
-                int appended = 0;
-                while (pendingUiNodes.Count > 0
-                    && appended < UiAppendSafetyLimit
-                    && (appended == 0 || stopwatch.ElapsedMilliseconds < UiAppendTimeBudgetMs))
-                {
-                    var node = pendingUiNodes.Dequeue();
-                    nodes.Add(node);
-                    treeView.Nodes.Add(CreateRootTreeNode(node));
-                    appended++;
-                }
-            }
-            finally
-            {
-                treeView.EndUpdate();
-            }
-            if (pendingUiNodes.Count > 0)
-                ScheduleAppendPendingUiNodes();
-        }
-        private TreeNode CreateRootTreeNode(Node fileNode)
-        {
-            var rootNode = new TreeNode();
-            rootNode.Text = fileNode.title;
-            rootNode.Tag = fileNode;
-            foreach (var fileSet in fileNode.fileSets)
-                rootNode.Nodes.Add(CreateFileSetTreeNode(fileSet));
-            if (fileNode.type == Node.NodeType.DLSite && !fileNode.loaded)
-                rootNode.Nodes.Add(CreateLazyLoadPlaceholderNode());
-            return rootNode;
-        }
+
         private TreeNode CreateFileSetTreeNode(AFileSet fileSet)
         {
             var secondNode = new TreeNode();
@@ -437,39 +457,7 @@ namespace MyAudioPlayer.PlayList
             }
             return secondNode;
         }
-        private static TreeNode CreateLazyLoadPlaceholderNode()
-        {
-            var node = new TreeNode();
-            node.Tag = LazyLoadPlaceholderTag;
-            return node;
-        }
-        private static bool IsLazyLoadPlaceholder(TreeNode node)
-        {
-            return ReferenceEquals(node.Tag, LazyLoadPlaceholderTag);
-        }
-        private async Task LoadTreeNodeChildrenAsync(TreeNode treeNode, bool expandAfterLoad = false)
-        {
-            if (treeNode.Tag is not Node node)
-                return;
-            if (node.type != Node.NodeType.DLSite || node.loaded)
-                return;
-            if (treeNode.Nodes.Count == 0)
-                treeNode.Nodes.Add(CreateLazyLoadPlaceholderNode());
-            try
-            {
-                var fileSets = await StartLoadingNode(node);
-                if (treeView.IsDisposed || treeNode.TreeView != treeView)
-                    return;
-                ApplyLoadedFileSets(treeNode, node, fileSets);
-                if (expandAfterLoad && treeNode.TreeView == treeView && treeNode.Nodes.Count > 0)
-                    treeNode.Expand();
-            }
-            catch (Exception e)
-            {
-                if (!treeView.IsDisposed && treeNode.TreeView == treeView)
-                    ApplyLoadError(treeNode, node, e);
-            }
-        }
+
         private static Task<List<AFileSet>> StartLoadingNode(Node node)
         {
             if (node.loadingTask != null)
@@ -477,221 +465,440 @@ namespace MyAudioPlayer.PlayList
             node.loadingTask = LoadFileSetsFromDirAsync(node.rootRir);
             return node.loadingTask;
         }
+
         private static async Task<List<AFileSet>> LoadFileSetsFromDirAsync(DirectoryInfo dirInfo)
         {
-            await FileSetLoadSemaphore.WaitAsync();
+            await FileSetLoadSemaphore.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await Task.Run(() => LoadFileSetsFromDir(dirInfo));
+                return await Task.Run(() => LoadFileSetsFromDir(dirInfo)).ConfigureAwait(false);
             }
             finally
             {
                 FileSetLoadSemaphore.Release();
             }
         }
-        private bool EnsureTreeNodeLoaded(TreeNode treeNode)
+
+        private async Task LoadWorkIntoFileTreeAsync(int index, bool selectCurrentAfterLoad = false)
         {
-            var rootNode = GetTopNode(treeNode);
-            if (rootNode is null || rootNode.Tag is not Node node)
-                return true;
-            if (node.type != Node.NodeType.DLSite || node.loaded)
+            if (!IsValidWorkIndex(index))
+                return;
+
+            var node = nodes[index];
+            int loadVersion = ++fileTreeLoadVersion;
+            displayedWorkIndex = index;
+
+            fileTreeView.BeginUpdate();
+            fileTreeView.Nodes.Clear();
+            fileTreeView.EndUpdate();
+
+            if (!node.loaded)
+            {
+                try
+                {
+                    node.fileSets = await StartLoadingNode(node);
+                    node.loaded = true;
+                    node.loadingTask = null;
+                    RefreshWorkItem(index);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.Message);
+                    node.loadingTask = null;
+                    return;
+                }
+            }
+
+            if (loadVersion != fileTreeLoadVersion || !IsSameNodeAtIndex(index, node))
+                return;
+
+            fileTreeView.BeginUpdate();
+            try
+            {
+                fileTreeView.Nodes.Clear();
+                foreach (var fileSet in node.fileSets)
+                    fileTreeView.Nodes.Add(CreateFileSetTreeNode(fileSet));
+            }
+            finally
+            {
+                fileTreeView.EndUpdate();
+            }
+
+            if (selectCurrentAfterLoad)
+                SelectCurrentFileInTree();
+        }
+
+        private bool EnsureWorkLoaded(int index)
+        {
+            if (!IsValidWorkIndex(index))
+                return false;
+            var node = nodes[index];
+            if (node.loaded)
                 return true;
             try
             {
-                var fileSets = StartLoadingNode(node).GetAwaiter().GetResult();
-                if (rootNode.TreeView == treeView)
-                    ApplyLoadedFileSets(rootNode, node, fileSets);
+                node.fileSets = StartLoadingNode(node).GetAwaiter().GetResult();
+                node.loaded = true;
+                node.loadingTask = null;
+                RefreshWorkItem(index);
+                if (displayedWorkIndex == index)
+                    BuildFileTree(index);
                 return true;
             }
             catch (Exception e)
             {
-                if (rootNode.TreeView == treeView)
-                    ApplyLoadError(rootNode, node, e);
+                Console.WriteLine(e.Message);
+                node.loadingTask = null;
                 return false;
             }
         }
-        private void ApplyLoadedFileSets(TreeNode rootNode, Node node, List<AFileSet> fileSets)
+
+        private void BuildFileTree(int index)
         {
-            if (node.loaded)
+            if (!IsValidWorkIndex(index))
                 return;
-            node.fileSets = fileSets;
-            node.loaded = true;
-            node.loadingTask = null;
-            rootNode.Nodes.Clear();
-            foreach (var fileSet in node.fileSets)
-                rootNode.Nodes.Add(CreateFileSetTreeNode(fileSet));
+            displayedWorkIndex = index;
+            fileTreeView.BeginUpdate();
+            try
+            {
+                fileTreeView.Nodes.Clear();
+                foreach (var fileSet in nodes[index].fileSets)
+                    fileTreeView.Nodes.Add(CreateFileSetTreeNode(fileSet));
+            }
+            finally
+            {
+                fileTreeView.EndUpdate();
+            }
         }
-        private void ApplyLoadError(TreeNode rootNode, Node node, Exception e)
-        {
-            Console.WriteLine(e.Message);
-            node.loadingTask = null;
-            rootNode.Nodes.Clear();
-            rootNode.Nodes.Add(CreateLazyLoadPlaceholderNode());
-        }
+
         public override FileInfo? GetCurrentFile()
         {
-            if(this.currentNode == null)
+            if (!IsValidWorkIndex(currentWorkIndex))
                 return null;
-            //选中叶节点返回文件，选择上级时向下寻找第一个子节点
-            var currentNode = this.currentNode!;//注意不使用treeView.SelectedNode
-            if (currentNode.Tag as AFile != null)
-                return (currentNode.Tag as AFile)!.fileInfo;
-            else if (currentNode.Tag as AFileSet != null)
-            {
-                var files = (currentNode.Tag as AFileSet)!.files;
-                if (files.Count == 0)
-                    return null;
-                return files.First().fileInfo;
-            }
-            else if(currentNode.Tag as Node != null)
-            {
-                if (!EnsureTreeNodeLoaded(currentNode))
-                    return null;
-                var fileSet = (currentNode.Tag as Node)!.fileSets;
-                if (fileSet.Count == 0)//不会为null
-                    return null;
-                var files = fileSet.First().files;
-                if (files.Count == 0)
-                    return null;
-                return files.First().fileInfo;
-            }
-            return null;
+            if (!EnsureWorkLoaded(currentWorkIndex))
+                return null;
+            if (!ResolveCurrentFile(out var file))
+                return null;
+            return file.fileInfo;
         }
-        //删除选中的节点的文件
+
         public void DeleteNodePart(TreeNode _node)
         {
-            var selectedNode = _node;
-            if (selectedNode is null)
+            if (_node is null)
                 return;
-            if (selectedNode.Tag is Node)
-                EnsureTreeNodeLoaded(selectedNode);
-            if (selectedNode.Tag is Node)//顶级节点,此时播放的肯定是第一个文件(播放完第一个通过MoveCurrent播放第二个时会选中子节点)，删除第一个
-            {
-                while (selectedNode.Nodes.Count > 0 && !IsLazyLoadPlaceholder(selectedNode.Nodes[0]))//
-                    selectedNode = selectedNode.Nodes[0];
-            }
-            if (selectedNode.Tag is AFileSet)
-            {
-                var fileSet = (selectedNode.Tag as AFileSet)!;
-                var node=(selectedNode.Parent.Tag as Node)!;
-                Console.WriteLine($"DelPart:{node.rootRir}");
-                //如果currentNode也被删除，则移动到下个节点，selectedNode不处理
-                if (IsChildren(currentNode,selectedNode))
-                {
-                    //不用管currentNode是哪个，因为selectedNode整个被删除，直接移动到selectedNode的NextNode
-                    if (selectedNode.NextNode != null)
-                        currentNode = selectedNode.NextNode;
-                    else if (selectedNode.Parent.NextNode != null)//selectedNode是FileSet，不需要检查grandparent
-                        currentNode = selectedNode.Parent.NextNode;
-                    //如果移动后currentNode仍然要被删除，清空currentNode
-                    if (IsChildren(currentNode,selectedNode))
-                        currentNode = null;
-                }
-                var tmpParent=selectedNode.Parent;//remove之后parent会置空
-                treeView.Nodes.Remove(selectedNode);
-                node.fileSets.Remove(fileSet);//node也要修改否则之后再选中所在节点会出问题
-                if (tmpParent.Nodes.Count <= 0)
-                    treeView.Nodes.Remove(tmpParent);
-                foreach (var file in fileSet.files)//删除下面的所有文件，注意不要删除文件夹，因为AFileSet可能在顶级目录
-                    file.fileInfo.Delete();
+            if (contextTarget == ContextTarget.FileTree && TryGetFileTreeNodeIndexes(_node, out var workIndex, out var fileSetIndex, out var fileIndex))
+                DeletePartAt(workIndex, fileSetIndex, fileIndex);
         }
-            else if (selectedNode.Tag is AFile)
-            {
-                var fileset = (selectedNode.Parent.Tag as AFileSet)!;
-                var file = (selectedNode.Tag as AFile)!;
-                Console.WriteLine($"DelPart:{file.fileInfo.FullName}");
-                FileInfo fileInfo = file.fileInfo;
-                //如果currentNode也被删除，则移动到下个节点
-                if (IsChildren(currentNode, selectedNode))
-                {
-                    MoveCurrent(1);
-                    if (IsChildren(currentNode, selectedNode))//如果移动后currentNode仍然等于selectedNode(即只有这个叶节点)，清空currentNode
-                        currentNode = null;
-                }
-                var tmpParent = selectedNode.Parent;//remove之后parent会置空
-                treeView.Nodes.Remove(selectedNode);
-                fileset.files.Remove(file);//fileset也要修改否则之后再选中所在节点会出问题
-                if (tmpParent.Nodes.Count <= 0)
-                {
-                    var tmptmpParent= tmpParent.Parent;
-                    treeView.Nodes.Remove(tmpParent);
-                    if (tmptmpParent.Nodes.Count <= 0 && tmptmpParent.Tag is Node)
-                    {
-                        try
-                        {
-                            //通知DLSiteHelperServer
-                            string url = $"{dlServer}/?markEliminated{(tmptmpParent.Tag as Node)!.RJ}";
-                            using (HttpResponseMessage response = httpClient.GetAsync(url).Result)
-                            {
-                                if (response.StatusCode != System.Net.HttpStatusCode.OK)
-                                    throw new Exception("DLServer Return non-success");
-                            }
-                        }
-                        catch (Exception e)
-                        {
-                            Console.WriteLine(e.Message);
-                            throw;
-                        }
-                    }
-                }
-                if (fileInfo.Exists)
-                    fileInfo.Delete();
-            }
-        }
-        //删除选中的节点所在的顶级节点并通知server标记为eliminated
-        public void DeleteNode(TreeNode _node) 
+
+        public void DeleteNode(TreeNode _node)
         {
-            var selectedNode = GetTopNode(_node);
-            if (selectedNode is null)
+            DeleteSelectedWork();
+        }
+
+        public void FavNode(TreeNode _node)
+        {
+            FavSelectedWork();
+        }
+
+        public override void DeleteCurrentPart()
+        {
+            if (!IsValidWorkIndex(currentWorkIndex))
                 return;
-            var node = (selectedNode.Tag as Node)!;
-            Console.WriteLine($"Delete:{node.rootRir}");
-            //如果会删除currentNode则移动CurrentNode
-            if(IsChildren(currentNode,selectedNode))
+            if (!EnsureWorkLoaded(currentWorkIndex))
+                return;
+            if (currentCursorKind == CursorKind.File)
+                DeletePartAt(currentWorkIndex, currentFileSetIndex, currentFileIndex);
+            else
+                DeletePartAt(currentWorkIndex, currentFileSetIndex, -1);
+        }
+
+        public override void DeleteCurrent()
+        {
+            DeleteWorkAt(currentWorkIndex);
+        }
+
+        public override void FavCurrent()
+        {
+            FavWorkAt(currentWorkIndex);
+        }
+
+        public override string GetCurrentFileDesc()
+        {
+            var desc = "";
+            if (!IsValidWorkIndex(currentWorkIndex))
+                return desc;
+            if (!EnsureWorkLoaded(currentWorkIndex))
+                return desc;
+
+            var node = nodes[currentWorkIndex];
+            desc += node.title + "\n";
+            if (!ResolveCurrentFile(out var file))
+                return desc;
+            desc += file.title + "\n";
+            desc += GetFileDetail(file.fileInfo);
+            return desc;
+        }
+
+        public override void OpenLocalSelected()
+        {
+            int index = GetSelectedOrDisplayedWorkIndex();
+            if (!IsValidWorkIndex(index))
+                return;
+            var dir = nodes[index].rootRir;
+            if (!dir.Exists)
+                return;
+            Process.Start(new ProcessStartInfo(dir.FullName) { UseShellExecute = true });
+        }
+
+        public override void OpenWebSelected()
+        {
+            int index = GetSelectedOrDisplayedWorkIndex();
+            if (!IsValidWorkIndex(index))
+                return;
+            var rj = nodes[index].RJ;
+            var url = $"https://www.dlsite.com/maniax/work/=/product_id/{rj}.html";
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+
+        public override void SelectCurrent()
+        {
+            if (!IsValidWorkIndex(currentWorkIndex))
+                return;
+            worksListView.SelectedIndices.Clear();
+            worksListView.SelectedIndices.Add(currentWorkIndex);
+            worksListView.EnsureVisible(currentWorkIndex);
+            worksListView.Focus();
+            _ = LoadWorkIntoFileTreeAsync(currentWorkIndex, true);
+        }
+
+        private void MoveCurrentNext()
+        {
+            if (!EnsureWorkLoaded(currentWorkIndex))
+                return;
+            var node = nodes[currentWorkIndex];
+            if (TryResolveCurrentFileIndexes(node, out var fileSetIndex, out var fileIndex))
             {
-                //因为selectedNode连同子节点都被删除，直接把currentNode移动到SelectedNode的Next
-                if (selectedNode.NextNode != null)
-                    currentNode = selectedNode.NextNode;
-                else if (treeView.Nodes.Count == 0)
-                    currentNode = null;
-                else
-                    currentNode = treeView.Nodes[0];
-            }
-            treeView.Nodes.Remove(selectedNode);
-            if(node.type==Node.NodeType.SingleFile)
-            {
-                if (node.fileSets.Count <= 0)//SingleFile一定只有一个文件,但是可能因运行程序后删除导致没有文件
+                if (TryFindNextFileInWork(node, fileSetIndex, fileIndex + 1, out var nextFileSetIndex, out var nextFileIndex))
+                {
+                    SetCurrentToFile(currentWorkIndex, nextFileSetIndex, nextFileIndex);
                     return;
-                if (node.fileSets[0].files.Count <= 0)
+                }
+            }
+            SetCurrentToWork((currentWorkIndex + 1) % nodes.Count);
+        }
+
+        private void MoveCurrentPrevious()
+        {
+            if (!EnsureWorkLoaded(currentWorkIndex))
+                return;
+            var node = nodes[currentWorkIndex];
+            if (TryResolveCurrentFileIndexes(node, out var fileSetIndex, out var fileIndex)
+                && TryFindPreviousFileInWork(node, fileSetIndex, fileIndex - 1, out var prevFileSetIndex, out var prevFileIndex))
+            {
+                SetCurrentToFile(currentWorkIndex, prevFileSetIndex, prevFileIndex);
+                return;
+            }
+            SetCurrentToWork((currentWorkIndex - 1 + nodes.Count) % nodes.Count);
+        }
+
+        private bool TryFindNextFileInWork(Node node, int fileSetIndex, int fileIndex, out int nextFileSetIndex, out int nextFileIndex)
+        {
+            for (int i = Math.Max(0, fileSetIndex); i < node.fileSets.Count; i++)
+            {
+                int startFile = i == fileSetIndex ? Math.Max(0, fileIndex) : 0;
+                if (startFile < node.fileSets[i].files.Count)
+                {
+                    nextFileSetIndex = i;
+                    nextFileIndex = startFile;
+                    return true;
+                }
+            }
+            nextFileSetIndex = 0;
+            nextFileIndex = 0;
+            return false;
+        }
+
+        private bool TryFindPreviousFileInWork(Node node, int fileSetIndex, int fileIndex, out int prevFileSetIndex, out int prevFileIndex)
+        {
+            for (int i = Math.Min(fileSetIndex, node.fileSets.Count - 1); i >= 0; i--)
+            {
+                int startFile = i == fileSetIndex ? fileIndex : node.fileSets[i].files.Count - 1;
+                if (startFile >= 0 && node.fileSets[i].files.Count > 0)
+                {
+                    prevFileSetIndex = i;
+                    prevFileIndex = Math.Min(startFile, node.fileSets[i].files.Count - 1);
+                    return true;
+                }
+            }
+            prevFileSetIndex = 0;
+            prevFileIndex = 0;
+            return false;
+        }
+
+        private bool ResolveCurrentFile(out AFile file)
+        {
+            file = null!;
+            if (!IsValidWorkIndex(currentWorkIndex))
+                return false;
+            var node = nodes[currentWorkIndex];
+            if (!TryResolveCurrentFileIndexes(node, out var fileSetIndex, out var fileIndex))
+                return false;
+            currentFileSetIndex = fileSetIndex;
+            currentFileIndex = fileIndex;
+            file = node.fileSets[fileSetIndex].files[fileIndex];
+            return true;
+        }
+
+        private bool TryResolveCurrentFileIndexes(Node node, out int fileSetIndex, out int fileIndex)
+        {
+            fileSetIndex = currentFileSetIndex;
+            fileIndex = currentCursorKind == CursorKind.File ? currentFileIndex : 0;
+            if (currentCursorKind == CursorKind.Work)
+                fileSetIndex = 0;
+            if (fileSetIndex >= 0
+                && fileSetIndex < node.fileSets.Count
+                && fileIndex >= 0
+                && fileIndex < node.fileSets[fileSetIndex].files.Count)
+                return true;
+            return TryFindNextFileInWork(node, 0, 0, out fileSetIndex, out fileIndex);
+        }
+
+        private bool TrySetCurrentFromFileTreeNode(TreeNode? treeNode)
+        {
+            if (!TryGetFileTreeNodeIndexes(treeNode, out var workIndex, out var fileSetIndex, out var fileIndex))
+                return false;
+            if (fileIndex >= 0)
+                SetCurrentToFile(workIndex, fileSetIndex, fileIndex);
+            else
+                SetCurrentToFileSet(workIndex, fileSetIndex);
+            return true;
+        }
+
+        private bool TryGetFileTreeNodeIndexes(TreeNode? treeNode, out int workIndex, out int fileSetIndex, out int fileIndex)
+        {
+            workIndex = displayedWorkIndex;
+            fileSetIndex = -1;
+            fileIndex = -1;
+            if (!IsValidWorkIndex(workIndex) || treeNode is null)
+                return false;
+            var node = nodes[workIndex];
+            if (treeNode.Tag is AFileSet fileSet)
+            {
+                fileSetIndex = node.fileSets.IndexOf(fileSet);
+                return fileSetIndex >= 0;
+            }
+            if (treeNode.Tag is AFile file && treeNode.Parent?.Tag is AFileSet parentFileSet)
+            {
+                fileSetIndex = node.fileSets.IndexOf(parentFileSet);
+                if (fileSetIndex < 0)
+                    return false;
+                fileIndex = node.fileSets[fileSetIndex].files.IndexOf(file);
+                return fileIndex >= 0;
+            }
+            return false;
+        }
+
+        private void SetCurrentToWork(int workIndex)
+        {
+            if (!IsValidWorkIndex(workIndex))
+                return;
+            currentWorkIndex = workIndex;
+            currentFileSetIndex = 0;
+            currentFileIndex = 0;
+            currentCursorKind = CursorKind.Work;
+        }
+
+        private void SetCurrentToFileSet(int workIndex, int fileSetIndex)
+        {
+            if (!IsValidWorkIndex(workIndex))
+                return;
+            currentWorkIndex = workIndex;
+            currentFileSetIndex = Math.Max(0, fileSetIndex);
+            currentFileIndex = 0;
+            currentCursorKind = CursorKind.FileSet;
+        }
+
+        private void SetCurrentToFile(int workIndex, int fileSetIndex, int fileIndex)
+        {
+            if (!IsValidWorkIndex(workIndex))
+                return;
+            currentWorkIndex = workIndex;
+            currentFileSetIndex = Math.Max(0, fileSetIndex);
+            currentFileIndex = Math.Max(0, fileIndex);
+            currentCursorKind = CursorKind.File;
+        }
+
+        private void FavContextTarget()
+        {
+            int index = GetContextWorkIndex();
+            FavWorkAt(index);
+        }
+
+        private void DeleteContextTarget()
+        {
+            int index = GetContextWorkIndex();
+            DeleteWorkAt(index);
+        }
+
+        private void DeletePartContextTarget()
+        {
+            if (contextTarget == ContextTarget.FileTree
+                && TryGetFileTreeNodeIndexes(fileTreeView.SelectedNode, out var workIndex, out var fileSetIndex, out var fileIndex))
+            {
+                DeletePartAt(workIndex, fileSetIndex, fileIndex);
+                return;
+            }
+
+            int index = GetContextWorkIndex();
+            if (!IsValidWorkIndex(index))
+                return;
+            if (!EnsureWorkLoaded(index))
+                return;
+            if (nodes[index].fileSets.Count > 0)
+                DeletePartAt(index, 0, -1);
+        }
+
+        private void DeleteSelectedWork()
+        {
+            DeleteWorkAt(GetSelectedOrDisplayedWorkIndex());
+        }
+
+        private void FavSelectedWork()
+        {
+            FavWorkAt(GetSelectedOrDisplayedWorkIndex());
+        }
+
+        private void DeleteWorkAt(int index)
+        {
+            if (!IsValidWorkIndex(index))
+                return;
+
+            var node = nodes[index];
+            Console.WriteLine($"Delete:{node.rootRir}");
+            RemoveWorkAt(index);
+
+            if (node.type == Node.NodeType.SingleFile)
+            {
+                if (node.fileSets.Count <= 0 || node.fileSets[0].files.Count <= 0)
                     return;
                 var fileInfo = node.fileSets[0].files[0].fileInfo;
-                //仅删除文件(移动到deleted)
                 if (fileInfo.Exists)
                 {
-                    var destdir = rootDir.FullName + "/deleted";
+                    var destdir = Path.Combine(rootDir.FullName, "deleted");
                     if (!Directory.Exists(destdir))
                         Directory.CreateDirectory(destdir);
-                    fileInfo.MoveTo($"{destdir}/{fileInfo.Name}");
+                    fileInfo.MoveTo(Path.Combine(destdir, fileInfo.Name));
                 }
             }
-            else if(node.type==Node.NodeType.DLSite)
+            else if (node.type == Node.NodeType.DLSite)
             {
                 try
                 {
-                    //移动到deleted文件夹，这是为了防止误删
-                    {
-                        var destdir = rootDir.FullName + "/deleted";
-                        if (!Directory.Exists(destdir))
-                            Directory.CreateDirectory(destdir);
-                        Directory.Move($"{rootDir.FullName}/{node.rootRir.Name}", $"{destdir}/{node.rootRir.Name}");
-                    }
-                    //通知DLSiteHelperServer
-                    string url = $"{dlServer}/?markEliminated{node.RJ}";
-                    using (HttpResponseMessage response = httpClient.GetAsync(url).Result)
-                    {
-                        if (response.StatusCode != System.Net.HttpStatusCode.OK)
-                            throw new Exception("DLServer Return non-success");
-                    }
+                    var destdir = Path.Combine(rootDir.FullName, "deleted");
+                    if (!Directory.Exists(destdir))
+                        Directory.CreateDirectory(destdir);
+                    Directory.Move(node.rootRir.FullName, Path.Combine(destdir, node.rootRir.Name));
+                    MarkEliminated(node);
                 }
                 catch (Exception e)
                 {
@@ -700,50 +907,38 @@ namespace MyAudioPlayer.PlayList
                 }
             }
         }
-        public void FavNode(TreeNode _node) 
+
+        private void FavWorkAt(int index)
         {
-            if (favDir.FullName == rootDir.FullName)//当前根目录就是favDir
+            if (!IsValidWorkIndex(index))
                 return;
-            var selectedNode = GetTopNode(_node);
-            if (selectedNode is null)
+            if (favDir.FullName == rootDir.FullName)
                 return;
-            var node = (selectedNode.Tag as Node)!;
+
+            var node = nodes[index];
             Console.WriteLine($"Fav:{node.rootRir}");
-            //如果会删除currentNode则移动CurrentNode
-            if (IsChildren(currentNode,selectedNode))
-            {
-                //因为selectedNode连同子节点都被删除，直接把currentNode移动到SelectedNode的Next
-                if (selectedNode.NextNode != null)
-                    currentNode = selectedNode.NextNode;
-                else if (treeView.Nodes.Count == 0)
-                    currentNode = null;
-                else
-                    currentNode = treeView.Nodes[0];
-            }
-            treeView.Nodes.Remove(selectedNode);
+            RemoveWorkAt(index);
+
             try
             {
                 if (node.type == Node.NodeType.SingleFile)
                 {
-                    if (node.fileSets.Count <= 0)//SingleFile一定只有一个文件,但是可能因运行程序后删除导致没有文件
+                    if (node.fileSets.Count <= 0 || node.fileSets[0].files.Count <= 0)
                         return;
-                    if (node.fileSets[0].files.Count <= 0)
-                        return;
-                    var fileInfo=node.fileSets[0].files[0].fileInfo;
-                    var dest = $"{favDir.FullName}/{fileInfo.Name}";
+                    var fileInfo = node.fileSets[0].files[0].fileInfo;
+                    var dest = Path.Combine(favDir.FullName, fileInfo.Name);
                     if (!File.Exists(dest))
                         fileInfo.MoveTo(dest);
-                    else//目标目录已存在则不拷贝仅删除
+                    else
                         fileInfo.Delete();
                 }
                 else if (node.type == Node.NodeType.DLSite)
                 {
-                    var dirname = (selectedNode.Tag as Node)!.rootRir.Name;
-                    var destdir = $"{favDir.FullName}/{dirname}";
+                    var destdir = Path.Combine(favDir.FullName, node.rootRir.Name);
                     if (!Directory.Exists(destdir))
-                        Directory.Move($"{rootDir.FullName}/{dirname}", $"{favDir.FullName}/{dirname}");
-                    else//目标目录已存在则不拷贝仅删除
-                        Directory.Delete($"{rootDir.FullName}/{dirname}", true);
+                        Directory.Move(node.rootRir.FullName, destdir);
+                    else
+                        Directory.Delete(node.rootRir.FullName, true);
                 }
             }
             catch (Exception e)
@@ -753,124 +948,200 @@ namespace MyAudioPlayer.PlayList
             }
         }
 
-        public override void DeleteCurrentPart()
+        private void DeletePartAt(int workIndex, int fileSetIndex, int fileIndex)
         {
-            DeleteNodePart(currentNode!);
-        }
-        //删除选中的节点所在的顶级节点并通知server标记为eliminated
-        public override void DeleteCurrent()
-        {
-            DeleteNode(currentNode!);
-        }
-        public override void FavCurrent()
-        {
-            FavNode(currentNode!);
+            if (!IsValidWorkIndex(workIndex))
+                return;
+            if (!EnsureWorkLoaded(workIndex))
+                return;
+
+            var node = nodes[workIndex];
+            if (fileSetIndex < 0 || fileSetIndex >= node.fileSets.Count)
+                return;
+
+            if (fileIndex < 0)
+                DeleteFileSetAt(workIndex, fileSetIndex);
+            else
+                DeleteFileAt(workIndex, fileSetIndex, fileIndex);
         }
 
-        public override string GetCurrentFileDesc() 
+        private void DeleteFileSetAt(int workIndex, int fileSetIndex)
         {
-            var desc = "";
-            {
-                var curNode = GetCurrentTopNode();
-                if (curNode is null)
-                    return desc;
-                EnsureTreeNodeLoaded(curNode);
-                var node = (curNode.Tag as Node)!;
-                desc += node.title+"\n";
-            }
-            {
-                var curNode = GetCurrentLeafNode();
-                if (curNode is null)
-                    return desc;
-                var node = (curNode.Tag as AFile)!;
-                desc += node.title+"\n";
-                desc += GetFileDetail(node.fileInfo);
-            }
-            return desc;
+            var node = nodes[workIndex];
+            var fileSet = node.fileSets[fileSetIndex];
+            Console.WriteLine($"DelPart:{node.rootRir}");
+
+            foreach (var file in fileSet.files)
+                if (file.fileInfo.Exists)
+                    file.fileInfo.Delete();
+
+            node.fileSets.RemoveAt(fileSetIndex);
+            AfterPartDeleted(workIndex);
         }
-        public override void OpenLocalSelected()
+
+        private void DeleteFileAt(int workIndex, int fileSetIndex, int fileIndex)
         {
-            var selectedNode = GetTopNode(treeView.SelectedNode);
-            if (selectedNode is null)
+            var node = nodes[workIndex];
+            var fileSet = node.fileSets[fileSetIndex];
+            if (fileIndex < 0 || fileIndex >= fileSet.files.Count)
                 return;
-            var dir = (selectedNode.Tag as Node)!.rootRir;
-            if (!dir.Exists)
+
+            var file = fileSet.files[fileIndex];
+            Console.WriteLine($"DelPart:{file.fileInfo.FullName}");
+            if (file.fileInfo.Exists)
+                file.fileInfo.Delete();
+
+            fileSet.files.RemoveAt(fileIndex);
+            if (fileSet.files.Count <= 0)
+                node.fileSets.RemoveAt(fileSetIndex);
+            if (node.fileSets.Count <= 0 && node.type == Node.NodeType.DLSite)
+                MarkEliminated(node);
+            AfterPartDeleted(workIndex);
+        }
+
+        private void AfterPartDeleted(int workIndex)
+        {
+            if (!IsValidWorkIndex(workIndex))
                 return;
-            //更新net版本后UseShellExecute默认值变为false导致无法打开url，需要指定为true
-            System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo(dir.FullName) { UseShellExecute = true });
-        }
-        public override void OpenWebSelected() 
-        {
-            var selectedNode = GetTopNode(treeView.SelectedNode);
-            if (selectedNode is null)
-                return;
-            var rj = (selectedNode.Tag as Node)!.RJ;
-            var url = $"https://www.dlsite.com/maniax/work/=/product_id/{rj}.html";
-            //更新net版本后UseShellExecute默认值变为false导致无法打开url，需要指定为true
-            System.Diagnostics.Process.Start(
-                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
-        }
-        TreeNode? GetTopNode(TreeNode? selectedNode)
-        {
-            if (selectedNode is null)
-                return null;
-            while (selectedNode.Parent is not null)
-                selectedNode = selectedNode.Parent;
-            if (selectedNode.Tag as Node is null)
-                return null;
-            return selectedNode;
-        }
-        TreeNode? GetCurrentTopNode()
-        {
-            if (currentNode is null)
-                return null;
-            return GetTopNode(this.currentNode);
-        }
-/*        TreeNode? GetSelectedLeafNode()
-        {
-            var selectedNode = treeView.SelectedNode;
-            while (selectedNode.Nodes.Count > 0)
-                selectedNode = selectedNode.Nodes[0];
-            if (selectedNode.Tag is not AFile)
-                return null;
-            return selectedNode;
-        }
-*/
-        TreeNode? GetCurrentLeafNode()
-        {
-            if (currentNode is null)
-                return null;
-            var curNode = this.currentNode;
-            EnsureTreeNodeLoaded(curNode);
-            while (curNode.Nodes.Count > 0 && !IsLazyLoadPlaceholder(curNode.Nodes[0]))
+            if (nodes[workIndex].fileSets.Count <= 0)
             {
-                curNode = curNode.Nodes[0];
-                EnsureTreeNodeLoaded(curNode);
+                RemoveWorkAt(workIndex);
+                return;
             }
-            if (curNode.Tag is not AFile)
-                return null;
-            return curNode;
+
+            if (displayedWorkIndex == workIndex)
+                BuildFileTree(workIndex);
+            if (currentWorkIndex == workIndex && !ResolveCurrentFile(out _))
+                SetCurrentToFileSet(workIndex, 0);
         }
+
+        private void RemoveWorkAt(int index)
+        {
+            if (!IsValidWorkIndex(index))
+                return;
+
+            nodes.RemoveAt(index);
+            worksListView.VirtualListSize = nodes.Count;
+            worksListView.Invalidate();
+
+            if (currentWorkIndex == index)
+            {
+                currentWorkIndex = nodes.Count == 0 ? -1 : Math.Min(index, nodes.Count - 1);
+                currentFileSetIndex = 0;
+                currentFileIndex = 0;
+                currentCursorKind = IsValidWorkIndex(currentWorkIndex) ? CursorKind.Work : CursorKind.None;
+            }
+            else if (currentWorkIndex > index)
+                currentWorkIndex--;
+
+            if (displayedWorkIndex == index)
+            {
+                displayedWorkIndex = -1;
+                fileTreeView.Nodes.Clear();
+            }
+            else if (displayedWorkIndex > index)
+                displayedWorkIndex--;
+        }
+
+        private void MarkEliminated(Node node)
+        {
+            if (string.IsNullOrEmpty(node.RJ))
+                return;
+            string url = $"{dlServer}/?markEliminated{node.RJ}";
+            using (HttpResponseMessage response = httpClient.GetAsync(url).Result)
+            {
+                if (response.StatusCode != System.Net.HttpStatusCode.OK)
+                    throw new Exception("DLServer Return non-success");
+            }
+        }
+
+        private int GetSelectedWorkIndex()
+        {
+            if (worksListView.SelectedIndices.Count <= 0)
+                return -1;
+            return worksListView.SelectedIndices[0];
+        }
+
+        private int GetSelectedOrDisplayedWorkIndex()
+        {
+            int selected = GetSelectedWorkIndex();
+            if (IsValidWorkIndex(selected))
+                return selected;
+            return displayedWorkIndex;
+        }
+
+        private int GetContextWorkIndex()
+        {
+            if (contextTarget == ContextTarget.FileTree && IsValidWorkIndex(displayedWorkIndex))
+                return displayedWorkIndex;
+            return GetSelectedOrDisplayedWorkIndex();
+        }
+
+        private bool IsValidWorkIndex(int index)
+        {
+            return index >= 0 && index < nodes.Count;
+        }
+
+        private bool IsSameNodeAtIndex(int index, Node node)
+        {
+            return IsValidWorkIndex(index) && ReferenceEquals(nodes[index], node);
+        }
+
+        private void RefreshWorkItem(int index)
+        {
+            if (!worksListView.IsHandleCreated || !IsValidWorkIndex(index))
+                return;
+            worksListView.RedrawItems(index, index, false);
+        }
+
+        private void EnsureDelContextMenuItemVisible(bool visible)
+        {
+            if (visible)
+            {
+                if (!contextMenuStrip.Items.Contains(contextMenuStripItemDel))
+                    contextMenuStrip.Items.Add(contextMenuStripItemDel);
+            }
+            else
+            {
+                if (contextMenuStrip.Items.Contains(contextMenuStripItemDel))
+                    contextMenuStrip.Items.Remove(contextMenuStripItemDel);
+            }
+        }
+
+        private void RaiseMountedDoubleClickHandlers()
+        {
+            mountedDoubleClickHandlers?.Invoke(
+                this,
+                new TreeNodeMouseClickEventArgs(new TreeNode(), MouseButtons.Left, 2, 0, 0));
+        }
+
+        private void SelectCurrentFileInTree()
+        {
+            if (!IsValidWorkIndex(currentWorkIndex) || displayedWorkIndex != currentWorkIndex)
+                return;
+            if (!ResolveCurrentFile(out _))
+                return;
+
+            if (currentFileSetIndex < 0 || currentFileSetIndex >= fileTreeView.Nodes.Count)
+                return;
+
+            var fileSetNode = fileTreeView.Nodes[currentFileSetIndex];
+            TreeNode target = fileSetNode;
+            if (currentCursorKind == CursorKind.File
+                && currentFileIndex >= 0
+                && currentFileIndex < fileSetNode.Nodes.Count)
+                target = fileSetNode.Nodes[currentFileIndex];
+
+            fileTreeView.SelectedNode = target;
+            target.EnsureVisible();
+        }
+
         string GetFileDetail(FileInfo fileInfo)
         {
             var ret = "";
             Shell32.ShellClass shell = new Shell32.ShellClass();
             Shell32.Folder dir = shell.NameSpace(fileInfo.Directory!.FullName);
             Shell32.FolderItem item = dir.ParseName(fileInfo.Name);
-            /*{
-                int i = 0;
-                while (true)
-                {
-                    var key = dir.GetDetailsOf(null, i);
-                    if (string.IsNullOrEmpty(key))
-                        break;
-                    Console.WriteLine(key);
-                    Console.WriteLine(i);
-                    i++;
-                }
-            }*/
-            //Artists13 Authors20
             var str = dir.GetDetailsOf(item, 13);
             if (str != "")
                 ret += $"作者:{str}\n";
@@ -880,36 +1151,13 @@ namespace MyAudioPlayer.PlayList
                 if (str != "")
                     ret += $"作者:{str}\n";
             }
-            //Album14
             str = dir.GetDetailsOf(item, 14);
             if (str != "")
                 ret += $"系列:{str}\n";
-            //Title21
             str = dir.GetDetailsOf(item, 21);
             if (str != "")
                 ret += $"标题:{str}\n";
             return ret;
-        }
-        bool IsChildren(TreeNode? child,TreeNode node)
-        {
-            if(child is null)
-                return false;
-            if(child==node)
-                return true;
-            foreach (TreeNode subnode in node.Nodes)
-                if (subnode == child)
-                    return true;
-                else if (subnode.Nodes.Contains(child))
-                    return true;
-            return false;
-        }
-        public override void SelectCurrent() 
-        {
-            if (currentNode is null)
-                return;
-            treeView.SelectedNode = currentNode;
-            treeView.SelectedNode.EnsureVisible();
-            treeView.Focus();//treeView如果不处于focus状态，选中的条目不会高亮看不见
         }
     }
 }
