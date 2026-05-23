@@ -277,7 +277,7 @@ namespace MyAudioPlayer
             PlayListTab.ResumeLayout(false);
             if (playLists.Count > 0)
             {
-                PlayListTab.SelectTab(playLists.Count >= 3 ? 2 : 0);
+                PlayListTab.SelectTab(0);
                 OnCurrentPlayListChanged(null, new EventArgs());
             }
         }

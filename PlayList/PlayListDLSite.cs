@@ -384,7 +384,7 @@ namespace MyAudioPlayer.PlayList
                         if (!fileSets.ContainsKey(afileType))
                             fileSets.Add(afileType, new AFileSet
                             {
-                                title = subDir.Name + "_" + (fileSets.Count + 1).ToString(),
+                                title = GetFileSetTitle(dirInfo, subDir),
                                 files = new List<AFile> { }
                             });
                         fileSets[afileType].files.Add(file);
@@ -396,6 +396,27 @@ namespace MyAudioPlayer.PlayList
                 }
             }
             return ret;
+        }
+
+        private static string GetFileSetTitle(DirectoryInfo workDir, DirectoryInfo fileSetDir)
+        {
+            var title = fileSetDir.Name;
+            var parentDir = fileSetDir.Parent;
+            if (parentDir is null)
+                return title;
+            if (IsSameDirectory(fileSetDir, workDir) || IsSameDirectory(parentDir, workDir))
+                return title;
+            return $"{title} / {parentDir.Name}";
+        }
+
+        private static bool IsSameDirectory(DirectoryInfo left, DirectoryInfo right)
+        {
+            return string.Equals(NormalizeDirectoryPath(left), NormalizeDirectoryPath(right), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeDirectoryPath(DirectoryInfo dir)
+        {
+            return dir.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
         private static Node CreateSingleFileNode(DirectoryInfo dir, AFile file)
