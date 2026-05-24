@@ -635,7 +635,11 @@ namespace MyAudioPlayer.PlayList
             if (item.kind == WorkTreeItemKind.File)
                 return false;
             if (item.kind == WorkTreeItemKind.Work)
+            {
+                if (item.work?.type == Node.NodeType.SingleFile)
+                    return false;
                 return !item.childrenMaterialized || item.children.Count > 0;
+            }
             return item.children.Count > 0;
         }
 
@@ -703,6 +707,12 @@ namespace MyAudioPlayer.PlayList
                 return;
 
             item.children.Clear();
+            if (item.work.type == Node.NodeType.SingleFile)
+            {
+                item.childrenMaterialized = true;
+                return;
+            }
+
             foreach (var fileSet in item.work.fileSets)
             {
                 var fileSetItem = CreateFileSetItem(fileSet, item);
