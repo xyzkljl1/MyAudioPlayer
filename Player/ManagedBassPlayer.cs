@@ -5,8 +5,9 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using ManagedBass;
+using ManagedBass.Aac;
 using ManagedBass.Fx;
-//注意除了在nuget中安装ManagedBass/ManagedBass.Fx以外，还需要把bass.dll/bass_fx.dll拷贝到运行目录
+//注意除了在nuget中安装ManagedBass/ManagedBass.Fx/ManagedBass.Aac以外，还需要把bass.dll/bass_fx.dll/bass_aac.dll拷贝到运行目录
 namespace MyAudioPlayer.Player
 {
     internal class ManagedBassPlayer : BasePlayer
@@ -17,6 +18,8 @@ namespace MyAudioPlayer.Player
             //Bass.Init(Flags: DeviceInitFlags.Device3D);
             //Bass.Set3DFactors(1, 1, 1);
             Bass.Init();
+            BassAac.PlayAudioFromMp4 = true;
+            BassAac.AacSupportMp4 = true;
         }
         //理论上所有操作都会在channel非法时抛出异常,暂不处理        
         int channel = 0;
@@ -91,8 +94,7 @@ namespace MyAudioPlayer.Player
             if (!File.Exists(filename))
                 throw new Exception($"File not exist:{filename}");
             buffer = File.ReadAllBytes(filename);//读入内存以防止锁文件
-            fixed (byte* p = buffer)
-                channel = Bass.CreateStream((IntPtr)p, 0, buffer.Length, BassFlags.Decode);
+            channel = CreateDecodeStream(filename, buffer);
 
             channel = BassFx.TempoCreate(channel, BassFlags.FxFreeSource);
 
@@ -107,6 +109,21 @@ namespace MyAudioPlayer.Player
                 throw new Exception($"ManagedBass Can't Set Stop Event:{filename}/Err:{ManagedBass.Bass.LastError}");
             ApplyVolumeToChannel();
         }
+
+        unsafe private static int CreateDecodeStream(string filename, byte[] fileBuffer)
+        {
+            var ext = Path.GetExtension(filename).ToLowerInvariant();
+            fixed (byte* p = fileBuffer)
+            {
+                var data = (IntPtr)p;
+                if (ext == ".mp4" || ext == ".m4a")
+                    return BassAac.CreateMp4Stream(data, 0, fileBuffer.Length, BassFlags.Decode);
+                if (ext == ".aac")
+                    return BassAac.CreateStream(data, 0, fileBuffer.Length, BassFlags.Decode);
+                return Bass.CreateStream(data, 0, fileBuffer.Length, BassFlags.Decode);
+            }
+        }
+
         public override void SetVolume(float volume)
         {
             this.volume = Math.Clamp(volume, .0f, 1.0f);
