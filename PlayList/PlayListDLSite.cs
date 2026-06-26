@@ -174,7 +174,7 @@ namespace MyAudioPlayer.PlayList
             contextMenuStrip.ItemClicked += this.ContextMenuClicked;
 
             MountFileEditEvent(_begin, _end);
-            ReloadFromLocal();
+            ReloadFromLocal(false);
         }
 
         public override void ApplyTheme(PlayerTheme theme)
@@ -307,7 +307,7 @@ namespace MyAudioPlayer.PlayList
         {
             if (e.ClickedItem == contextMenuStripItemRefresh)
             {
-                ReloadFromLocal();
+                ReloadFromLocal(true);
                 return;
             }
 
@@ -374,7 +374,7 @@ namespace MyAudioPlayer.PlayList
             worksListView.Invalidate();
         }
 
-        private void ReloadFromLocal()
+        private void ReloadFromLocal(bool resetViewport)
         {
             int generation = Interlocked.Increment(ref reloadGeneration);
             string? currentRootPath = GetCurrentWorkRootPath();
@@ -384,7 +384,7 @@ namespace MyAudioPlayer.PlayList
                 reloadSemaphore.Wait();
                 try
                 {
-                    LoadFiles(generation, currentRootPath);
+                    LoadFiles(generation, currentRootPath, resetViewport);
                 }
                 finally
                 {
@@ -405,7 +405,7 @@ namespace MyAudioPlayer.PlayList
             return generation == Volatile.Read(ref reloadGeneration);
         }
 
-        private void LoadFiles(int generation, string? currentRootPath)
+        private void LoadFiles(int generation, string? currentRootPath, bool resetViewport)
         {
             if (!rootDir.Exists)
                 rootDir.Create();
@@ -420,9 +420,10 @@ namespace MyAudioPlayer.PlayList
                 workItems.Clear();
                 currentWorkIndex = -1;
                 displayedWorkIndex = -1;
-                ResetNativeScrollToTop();
+                if (resetViewport)
+                    ResetNativeScrollToTop();
                 worksListView.VirtualListSize = 0;
-                resetVirtualViewportOnNextBatch = true;
+                resetVirtualViewportOnNextBatch = resetViewport;
                 worksListView.Invalidate();
             });
             if (!IsCurrentReloadGeneration(generation))
@@ -983,7 +984,10 @@ namespace MyAudioPlayer.PlayList
                 RebuildVisibleItems();
                 bool resetViewport = resetVirtualViewportOnNextBatch;
                 resetVirtualViewportOnNextBatch = false;
-                RefreshVirtualViewport(resetViewport);
+                if (resetViewport)
+                    RefreshVirtualViewport(true);
+                else
+                    worksListView.Invalidate();
             });
         }
 
