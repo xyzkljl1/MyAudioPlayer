@@ -8,6 +8,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using MyAudioPlayer.Themes;
 using static MyAudioPlayer.PlayList.PlayListDLSite.AFile;
@@ -48,7 +49,12 @@ namespace MyAudioPlayer.PlayList
         private DirectoryInfo favDir;
         private List<Node> nodes = new List<Node>();
         ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
+        private ToolStripItem contextMenuStripItemFav;
+        private ToolStripItem contextMenuStripItemDel;
+        private ToolStripItem contextMenuStripItemRefresh;
         private PlayerTheme currentTheme = PlayerThemes.Resolve(PlayerThemes.DefaultId);
+        private readonly SemaphoreSlim reloadSemaphore = new SemaphoreSlim(1, 1);
+        private int reloadGeneration = 0;
         public PlayListLocalMusic(string _rootDir, MyFileEditEventHandler _begin, MyFileEditEventHandler _end)
         {
             needDelPartButton=false;
@@ -62,14 +68,20 @@ namespace MyAudioPlayer.PlayList
             treeView.DrawMode = TreeViewDrawMode.OwnerDrawText;
             treeView.DrawNode += this.TreeView_DrawNode;
             treeView.NodeMouseDoubleClick += this.NodeDoubleClicked;
-            treeView.NodeMouseClick += this.NodeClicked;
+            treeView.MouseClick += this.TreeView_MouseClick;
             treeView.AllowDrop = true;
+            treeView.ItemDrag += new ItemDragEventHandler(treeView_ItemDrag);
+            treeView.DragEnter += new DragEventHandler(treeView_DragEnter);
+            treeView.DragOver += new DragEventHandler(treeView_DragOver);
+            treeView.DragDrop += new DragEventHandler(treeView_DragDrop);
             //treeView.Scrollable = true;//需要设置tabPage.AutoScroll，而不是treeView.Scrollable
-            contextMenuStrip.Items.Add("Fav");
-            contextMenuStrip.Items.Add("Del");
+            contextMenuStripItemFav = contextMenuStrip.Items.Add("Fav");
+            contextMenuStripItemDel = contextMenuStrip.Items.Add("Del");
+            contextMenuStrip.Items.Add(new ToolStripSeparator());
+            contextMenuStripItemRefresh = contextMenuStrip.Items.Add("Refresh");
             contextMenuStrip.ItemClicked += this.ContextMenuClicked;
             MountFileEditEvent(_begin, _end);
-            Task.Run(LoadFiles);
+            ReloadFromLocal();
         }
 
         public override void ApplyTheme(PlayerTheme theme)
@@ -108,31 +120,42 @@ namespace MyAudioPlayer.PlayList
         {
             currentNode = treeView.SelectedNode;
         }
-        private void NodeClicked(object? sender, TreeNodeMouseClickEventArgs e)
+        private void TreeView_MouseClick(object? sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Right)
                 return;
-            if (e.Node == null)
-                return;
-            treeView.SelectedNode = e.Node;
-            if (e.Node != null)
-                contextMenuStrip.Show(treeView, e.X, e.Y);
+            var node = treeView.GetNodeAt(e.Location);
+            treeView.SelectedNode = node;
+            ConfigureContextMenu(node);
+            contextMenuStrip.Show(treeView, e.X, e.Y);
         }
         private void ContextMenuClicked(object? sender, ToolStripItemClickedEventArgs e)
         {
+            if (e.ClickedItem == contextMenuStripItemRefresh)
+            {
+                ReloadFromLocal();
+                return;
+            }
+
             MyFileEditEventArgs tmp_args = new MyFileEditEventArgs();
-            if (e.ClickedItem.Text == "Fav")
+            if (e.ClickedItem == contextMenuStripItemFav)
             {
                 RasieFileEditBeginEvent(tmp_args);
                 FavNode(treeView.SelectedNode);
                 RasieFileEditEndEvent(tmp_args);
             }
-            else if (e.ClickedItem.Text == "Del")
+            else if (e.ClickedItem == contextMenuStripItemDel)
             {
                 RasieFileEditBeginEvent(tmp_args);
                 DeleteNode(treeView.SelectedNode);
                 RasieFileEditEndEvent(tmp_args);
             }
+        }
+        private void ConfigureContextMenu(TreeNode? node)
+        {
+            bool hasTarget = node is not null;
+            contextMenuStripItemFav.Enabled = hasTarget;
+            contextMenuStripItemDel.Enabled = hasTarget;
         }
         public override void MountDoubleClickEvent(TreeNodeMouseClickEventHandler handler)
         {
@@ -190,21 +213,43 @@ namespace MyAudioPlayer.PlayList
                 rootNode.Tag = fileNode;
                 treeView.Nodes.Add(rootNode);
             }
-            treeView.ItemDrag += new ItemDragEventHandler(treeView_ItemDrag);
-            treeView.DragEnter += new DragEventHandler(treeView_DragEnter);
-            treeView.DragOver += new DragEventHandler(treeView_DragOver);
-            treeView.DragDrop += new DragEventHandler(treeView_DragDrop);
             treeView.ResumeLayout();
         }
-        private void LoadFiles()
+        private void ReloadFromLocal()
         {
-            nodes.Clear();
+            int generation = Interlocked.Increment(ref reloadGeneration);
+            string? currentFilePath = (currentNode?.Tag as Node)?.fileInfo.FullName;
+
+            Task.Run(() =>
+            {
+                reloadSemaphore.Wait();
+                try
+                {
+                    LoadFiles(generation, currentFilePath);
+                }
+                finally
+                {
+                    reloadSemaphore.Release();
+                }
+            });
+        }
+
+        private bool IsCurrentReloadGeneration(int generation)
+        {
+            return generation == Volatile.Read(ref reloadGeneration);
+        }
+
+        private void LoadFiles(int generation, string? currentFilePath)
+        {
             if (!rootDir.Exists)
                 rootDir.Create();
             var tmp_nodes=new Dictionary<string,Node>();
             var ordered_config=new List<string>();
             //Music下应当仅有数百单个文件，大概不会有性能问题
             foreach (var fileInfo in rootDir.GetFiles())
+            {
+                if (!IsCurrentReloadGeneration(generation))
+                    return;
                 if (fileInfo.Name == ConfigFileName)//顺序配置文件
                     using (JsonReader reader = new JsonTextReader(new System.IO.StreamReader(fileInfo.FullName)))
                     {
@@ -215,21 +260,49 @@ namespace MyAudioPlayer.PlayList
                     }
                 else
                     tmp_nodes[fileInfo.Name]=new Node(fileInfo);
+            }
             var ordered_config_set = ordered_config.ToHashSet<string>();
+            var loadedNodes = new List<Node>();
             //把不在配置文件中的即新文件放到最前
-            nodes.AddRange(from node_pair in tmp_nodes where !ordered_config_set.Contains(node_pair.Key) select node_pair.Value);
+            loadedNodes.AddRange(from node_pair in tmp_nodes where !ordered_config_set.Contains(node_pair.Key) select node_pair.Value);
             foreach (var name in ordered_config)
                 if(tmp_nodes.ContainsKey(name))
-                    nodes.Add(tmp_nodes[name]);
-            SaveOrderConfig();
+                    loadedNodes.Add(tmp_nodes[name]);
+            SaveOrderConfig(loadedNodes);
             //此函数是在MainWindow构造函数里开子线程调用的，如果load文件过快，此时可能窗口句柄尚未创建，因此要等待
             while (!treeView.IsHandleCreated) Task.Delay(100).Wait();
-            treeView.Invoke(() => this.RefreshMainControl());//编辑控件需要在主线程，借用treeView的invoke
+            treeView.Invoke(() =>
+            {
+                if (!IsCurrentReloadGeneration(generation))
+                    return;
+                nodes.Clear();
+                nodes.AddRange(loadedNodes);
+                this.RefreshMainControl();
+                RestoreCurrentAfterReload(currentFilePath);
+            });//编辑控件需要在主线程，借用treeView的invoke
         }
         private void SaveOrderConfig()
         {
+            SaveOrderConfig(nodes);
+        }
+        private void SaveOrderConfig(IEnumerable<Node> nodesToSave)
+        {
             using (var writer = new StreamWriter(Path.Combine(rootDir.FullName, ConfigFileName)))
-                writer.Write(JsonConvert.SerializeObject(nodes.Select(node => node.fileInfo.Name)));
+                writer.Write(JsonConvert.SerializeObject(nodesToSave.Select(node => node.fileInfo.Name)));
+        }
+        private void RestoreCurrentAfterReload(string? currentFilePath)
+        {
+            currentNode = null;
+            if (string.IsNullOrEmpty(currentFilePath))
+                return;
+            foreach (TreeNode node in treeView.Nodes)
+            {
+                if ((node.Tag as Node)?.fileInfo.FullName == currentFilePath)
+                {
+                    currentNode = node;
+                    break;
+                }
+            }
         }
         private void treeView_ItemDrag(object? sender, ItemDragEventArgs e)
         {
