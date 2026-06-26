@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -120,14 +121,25 @@ namespace MyAudioPlayer.PlayList
         private Dictionary<Node, WorkTreeItem> workItems = new Dictionary<Node, WorkTreeItem>();
         private HttpClient httpClient;
         private ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
+        private ToolStripItem contextMenuStripItemFav;
+        private ToolStripItem contextMenuStripItemDelPart;
         private ToolStripItem contextMenuStripItemDel;
+        private ToolStripItem contextMenuStripItemRefresh;
         private PlayerTheme currentTheme = PlayerThemes.Resolve(PlayerThemes.DefaultId);
         private int displayedWorkIndex = -1;
         private int currentWorkIndex = -1;
         private int currentFileSetIndex = 0;
         private int currentFileIndex = 0;
         private CursorKind currentCursorKind = CursorKind.None;
+        private readonly SemaphoreSlim reloadSemaphore = new SemaphoreSlim(1, 1);
+        private int reloadGeneration = 0;
+        private bool resetVirtualViewportOnNextBatch = false;
         private event TreeNodeMouseClickEventHandler? mountedDoubleClickHandlers;
+        private const int WM_VSCROLL = 0x0115;
+        private const int SB_TOP = 6;
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
         public PlayListDLSite(string _rootDir, MyFileEditEventHandler _begin, MyFileEditEventHandler _end)
         {
@@ -154,13 +166,15 @@ namespace MyAudioPlayer.PlayList
             worksListView.Resize += delegate { ResizeWorkListColumns(); };
 
             httpClient = new HttpClient();
-            contextMenuStrip.Items.Add("Fav");
-            contextMenuStrip.Items.Add("DelPart");
+            contextMenuStripItemFav = contextMenuStrip.Items.Add("Fav");
+            contextMenuStripItemDelPart = contextMenuStrip.Items.Add("DelPart");
             contextMenuStripItemDel = contextMenuStrip.Items.Add("Del");
+            contextMenuStrip.Items.Add(new ToolStripSeparator());
+            contextMenuStripItemRefresh = contextMenuStrip.Items.Add("Refresh");
             contextMenuStrip.ItemClicked += this.ContextMenuClicked;
 
             MountFileEditEvent(_begin, _end);
-            Task.Run(LoadFiles);
+            ReloadFromLocal();
         }
 
         public override void ApplyTheme(PlayerTheme theme)
@@ -250,48 +264,67 @@ namespace MyAudioPlayer.PlayList
 
         private async void WorksListView_MouseClick(object? sender, MouseEventArgs e)
         {
-            var item = worksListView.GetItemAt(e.X, e.Y);
-            if (item is null)
-                return;
-
-            worksListView.SelectedIndices.Clear();
-            worksListView.SelectedIndices.Add(item.Index);
-            var treeItem = GetVisibleItem(item.Index);
-            if (treeItem is null)
-                return;
-
             if (e.Button == MouseButtons.Left)
             {
-                if (CanExpandItem(treeItem))
-                    await ToggleTreeItemAsync(treeItem);
+                var item = worksListView.GetItemAt(e.X, e.Y);
+                if (item is null)
+                    return;
+
+                worksListView.SelectedIndices.Clear();
+                worksListView.SelectedIndices.Add(item.Index);
+                var clickedTreeItem = GetVisibleItem(item.Index);
+                if (clickedTreeItem is null)
+                    return;
+
+                if (CanExpandItem(clickedTreeItem))
+                    await ToggleTreeItemAsync(clickedTreeItem);
                 return;
             }
 
             if (e.Button != MouseButtons.Right)
                 return;
-            if (!IsValidWorkIndex(GetWorkIndexForItem(treeItem)))
+
+            var clickedItem = worksListView.GetItemAt(e.X, e.Y);
+            if (clickedItem is null)
+            {
+                worksListView.SelectedIndices.Clear();
+                ConfigureContextMenu(null);
+                contextMenuStrip.Show(worksListView, e.X, e.Y);
+                return;
+            }
+
+            worksListView.SelectedIndices.Clear();
+            worksListView.SelectedIndices.Add(clickedItem.Index);
+            var treeItem = GetVisibleItem(clickedItem.Index);
+            if (treeItem is null)
                 return;
 
-            EnsureDelContextMenuItemVisible(treeItem.IsWork);
+            ConfigureContextMenu(treeItem);
             contextMenuStrip.Show(worksListView, e.X, e.Y);
         }
 
         private void ContextMenuClicked(object? sender, ToolStripItemClickedEventArgs e)
         {
+            if (e.ClickedItem == contextMenuStripItemRefresh)
+            {
+                ReloadFromLocal();
+                return;
+            }
+
             MyFileEditEventArgs tmp_args = new MyFileEditEventArgs();
-            if (e.ClickedItem.Text == "Fav")
+            if (e.ClickedItem == contextMenuStripItemFav)
             {
                 RasieFileEditBeginEvent(tmp_args);
                 FavContextTarget();
                 RasieFileEditEndEvent(tmp_args);
             }
-            else if (e.ClickedItem.Text == "Del")
+            else if (e.ClickedItem == contextMenuStripItemDel)
             {
                 RasieFileEditBeginEvent(tmp_args);
                 DeleteContextTarget();
                 RasieFileEditEndEvent(tmp_args);
             }
-            else if (e.ClickedItem.Text == "DelPart")
+            else if (e.ClickedItem == contextMenuStripItemDelPart)
             {
                 RasieFileEditBeginEvent(tmp_args);
                 DeletePartContextTarget();
@@ -341,36 +374,80 @@ namespace MyAudioPlayer.PlayList
             worksListView.Invalidate();
         }
 
-        private void LoadFiles()
+        private void ReloadFromLocal()
+        {
+            int generation = Interlocked.Increment(ref reloadGeneration);
+            string? currentRootPath = GetCurrentWorkRootPath();
+
+            Task.Run(() =>
+            {
+                reloadSemaphore.Wait();
+                try
+                {
+                    LoadFiles(generation, currentRootPath);
+                }
+                finally
+                {
+                    reloadSemaphore.Release();
+                }
+            });
+        }
+
+        private string? GetCurrentWorkRootPath()
+        {
+            if (!IsValidWorkIndex(currentWorkIndex))
+                return null;
+            return nodes[currentWorkIndex].rootRir.FullName;
+        }
+
+        private bool IsCurrentReloadGeneration(int generation)
+        {
+            return generation == Volatile.Read(ref reloadGeneration);
+        }
+
+        private void LoadFiles(int generation, string? currentRootPath)
         {
             if (!rootDir.Exists)
                 rootDir.Create();
             while (!worksListView.IsHandleCreated) Task.Delay(100).Wait();
             worksListView.Invoke(() =>
             {
+                if (!IsCurrentReloadGeneration(generation))
+                    return;
                 nodes.Clear();
                 rootItems.Clear();
                 visibleItems.Clear();
                 workItems.Clear();
                 currentWorkIndex = -1;
                 displayedWorkIndex = -1;
+                ResetNativeScrollToTop();
                 worksListView.VirtualListSize = 0;
+                resetVirtualViewportOnNextBatch = true;
+                worksListView.Invalidate();
             });
+            if (!IsCurrentReloadGeneration(generation))
+                return;
 
             var pendingItems = new List<WorkTreeItem>();
-            LoadFilesImpl(rootDir, null, pendingItems);
-            FlushPendingItems(pendingItems);
+            LoadFilesImpl(rootDir, null, pendingItems, generation);
+            FlushPendingItems(pendingItems, generation);
+            RestoreCurrentAfterReload(generation, currentRootPath);
         }
 
-        private void LoadFilesImpl(DirectoryInfo dir, WorkTreeItem? parentItem, List<WorkTreeItem> pendingItems)
+        private void LoadFilesImpl(DirectoryInfo dir, WorkTreeItem? parentItem, List<WorkTreeItem> pendingItems, int generation)
         {
+            if (!IsCurrentReloadGeneration(generation))
+                return;
+
             try
             {
                 foreach (var fileInfo in dir.EnumerateFiles())
                 {
+                    if (!IsCurrentReloadGeneration(generation))
+                        return;
                     var file = new AFile(fileInfo);
                     if (file.type != AFile.FileType.OTHER)
-                        AddPendingWorkItem(CreateSingleFileNode(dir, file), parentItem, pendingItems);
+                        AddPendingWorkItem(CreateSingleFileNode(dir, file), parentItem, pendingItems, generation);
                 }
             }
             catch (Exception e)
@@ -383,10 +460,14 @@ namespace MyAudioPlayer.PlayList
             try
             {
                 foreach (var dirInfo in dir.EnumerateDirectories())
+                {
+                    if (!IsCurrentReloadGeneration(generation))
+                        return;
                     if (workNameRegex.IsMatch(dirInfo.Name))
-                        AddPendingWorkItem(CreateDLSiteNode(dirInfo), parentItem, pendingItems);
+                        AddPendingWorkItem(CreateDLSiteNode(dirInfo), parentItem, pendingItems, generation);
                     else if (seriesNameRegex.IsMatch(dirInfo.Name))
                         seriesDirs.Add(dirInfo);
+                }
             }
             catch (Exception e)
             {
@@ -396,9 +477,11 @@ namespace MyAudioPlayer.PlayList
 
             foreach (var dirInfo in seriesDirs)
             {
+                if (!IsCurrentReloadGeneration(generation))
+                    return;
                 var seriesItem = CreateSeriesItem(dirInfo.Name, parentItem);
-                AddPendingItem(seriesItem, pendingItems);
-                LoadFilesImpl(dirInfo, seriesItem, pendingItems);
+                AddPendingItem(seriesItem, pendingItems, generation);
+                LoadFilesImpl(dirInfo, seriesItem, pendingItems, generation);
             }
         }
 
@@ -871,19 +954,21 @@ namespace MyAudioPlayer.PlayList
             }
         }
 
-        private void AddPendingWorkItem(Node node, WorkTreeItem? parentItem, List<WorkTreeItem> pendingItems)
+        private void AddPendingWorkItem(Node node, WorkTreeItem? parentItem, List<WorkTreeItem> pendingItems, int generation)
         {
-            AddPendingItem(CreateWorkItem(node, parentItem), pendingItems);
+            AddPendingItem(CreateWorkItem(node, parentItem), pendingItems, generation);
         }
 
-        private void AddPendingItem(WorkTreeItem item, List<WorkTreeItem> pendingItems)
+        private void AddPendingItem(WorkTreeItem item, List<WorkTreeItem> pendingItems, int generation)
         {
+            if (!IsCurrentReloadGeneration(generation))
+                return;
             pendingItems.Add(item);
             if (pendingItems.Count >= ScanPublishBatchSize)
-                FlushPendingItems(pendingItems);
+                FlushPendingItems(pendingItems, generation);
         }
 
-        private void FlushPendingItems(List<WorkTreeItem> pendingItems)
+        private void FlushPendingItems(List<WorkTreeItem> pendingItems, int generation)
         {
             if (pendingItems.Count == 0)
                 return;
@@ -891,10 +976,78 @@ namespace MyAudioPlayer.PlayList
             pendingItems.Clear();
             worksListView.BeginInvoke(() =>
             {
+                if (!IsCurrentReloadGeneration(generation))
+                    return;
                 foreach (var item in batch)
                     AddTreeItemToUi(item);
                 RebuildVisibleItems();
+                bool resetViewport = resetVirtualViewportOnNextBatch;
+                resetVirtualViewportOnNextBatch = false;
+                RefreshVirtualViewport(resetViewport);
+            });
+        }
+
+        private void RefreshVirtualViewport(bool resetToTop)
+        {
+            int itemCount = worksListView.VirtualListSize;
+            if (itemCount <= 0)
+            {
                 worksListView.Invalidate();
+                return;
+            }
+
+            if (resetToTop)
+            {
+                ResetNativeScrollToTop();
+                worksListView.EnsureVisible(0);
+            }
+
+            int firstVisible = resetToTop ? 0 : GetFirstVisibleIndex();
+            int visibleRows = Math.Max(1, worksListView.ClientSize.Height / Math.Max(1, worksListView.Font.Height + 4) + 2);
+            int lastVisible = Math.Min(itemCount - 1, firstVisible + visibleRows);
+            worksListView.RedrawItems(firstVisible, lastVisible, true);
+            worksListView.Update();
+        }
+
+        private void ResetNativeScrollToTop()
+        {
+            if (!worksListView.IsHandleCreated)
+                return;
+            SendMessage(worksListView.Handle, WM_VSCROLL, new IntPtr(SB_TOP), IntPtr.Zero);
+        }
+
+        private int GetFirstVisibleIndex()
+        {
+            try
+            {
+                return Math.Clamp(worksListView.TopItem?.Index ?? 0, 0, Math.Max(0, worksListView.VirtualListSize - 1));
+            }
+            catch (InvalidOperationException)
+            {
+                return 0;
+            }
+        }
+
+        private void RestoreCurrentAfterReload(int generation, string? currentRootPath)
+        {
+            if (string.IsNullOrEmpty(currentRootPath))
+                return;
+
+            worksListView.BeginInvoke(() =>
+            {
+                if (!IsCurrentReloadGeneration(generation))
+                    return;
+
+                int index = nodes.FindIndex(node =>
+                    string.Equals(node.rootRir.FullName, currentRootPath, StringComparison.OrdinalIgnoreCase));
+                if (!IsValidWorkIndex(index))
+                    return;
+                SetCurrentToWork(index);
+                if (workItems.TryGetValue(nodes[index], out var item))
+                {
+                    SelectTreeItem(item);
+                    RefreshVirtualViewport(false);
+                }
             });
         }
 
@@ -1448,18 +1601,18 @@ namespace MyAudioPlayer.PlayList
             worksListView.RedrawItems(visibleIndex, visibleIndex, false);
         }
 
+        private void ConfigureContextMenu(WorkTreeItem? item)
+        {
+            bool hasTarget = item is not null && IsValidWorkIndex(GetWorkIndexForItem(item));
+            contextMenuStripItemFav.Enabled = hasTarget;
+            contextMenuStripItemDelPart.Enabled = hasTarget;
+            contextMenuStripItemDel.Enabled = hasTarget;
+            EnsureDelContextMenuItemVisible(hasTarget && item!.IsWork);
+        }
+
         private void EnsureDelContextMenuItemVisible(bool visible)
         {
-            if (visible)
-            {
-                if (!contextMenuStrip.Items.Contains(contextMenuStripItemDel))
-                    contextMenuStrip.Items.Add(contextMenuStripItemDel);
-            }
-            else
-            {
-                if (contextMenuStrip.Items.Contains(contextMenuStripItemDel))
-                    contextMenuStrip.Items.Remove(contextMenuStripItemDel);
-            }
+            contextMenuStripItemDel.Visible = visible;
         }
 
         private void RaiseMountedDoubleClickHandlers()
