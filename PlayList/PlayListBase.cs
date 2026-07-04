@@ -46,6 +46,7 @@ namespace MyAudioPlayer.PlayList
         //private virtual void DeleteSelectedPart() { }
         //private virtual void DeleteSelected() { }
         //private virtual void FavSelected() { }
+        public virtual void DeleteCurrentFile() { }
         public virtual void DeleteCurrentPart() { }
         public virtual void DeleteCurrent() { }
         public virtual void FavCurrent() { }

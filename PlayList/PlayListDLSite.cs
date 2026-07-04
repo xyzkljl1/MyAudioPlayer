@@ -1138,6 +1138,17 @@ namespace MyAudioPlayer.PlayList
                 DeletePartAt(currentWorkIndex, currentFileSetIndex, -1);
         }
 
+        public override void DeleteCurrentFile()
+        {
+            if (!IsValidWorkIndex(currentWorkIndex))
+                return;
+            if (!EnsureWorkLoaded(currentWorkIndex))
+                return;
+            if (!ResolveCurrentFile(out _))
+                return;
+            DeletePartAt(currentWorkIndex, currentFileSetIndex, currentFileIndex);
+        }
+
         public override void DeleteCurrent()
         {
             DeleteWorkAt(currentWorkIndex);

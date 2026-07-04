@@ -87,7 +87,7 @@ namespace MyAudioPlayer
                 toolTip.SetToolTip(this.SelectCurrentButton, "选中正在播放的条目");
                 toolTip.SetToolTip(this.FavButton, "收藏当前");
                 toolTip.SetToolTip(this.DelButton, "删除当前");
-                toolTip.SetToolTip(this.DelPartButton, "删除当前文件或文件集");
+                toolTip.SetToolTip(this.DelPartButton, "删除当前播放文件");
                 toolTip.SetToolTip(this.ThemeButton, "切换主题");
                 toolTip.SetToolTip(this.OpenWebButton, "打开网页");
                 toolTip.SetToolTip(this.OpenLocalButton, "打开本地文件夹");
@@ -206,12 +206,12 @@ namespace MyAudioPlayer
         void OnDelPartButtonClicked(object? sender, EventArgs e)
         {
             if (!CurrentPlayer.IsLoaded())
-                playLists[PlayListTab.SelectedIndex].DeleteCurrentPart();
+                return;
             else
             {
                 var arg = new MyFileEditEventArgs();
                 OnFileEditBegin(null, arg);
-                playLists[PlayListTab.SelectedIndex].DeleteCurrentPart();
+                playLists[PlayListTab.SelectedIndex].DeleteCurrentFile();
                 OnFileEditEnd(null, arg);
             }
         }

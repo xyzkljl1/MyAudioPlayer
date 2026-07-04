@@ -67,7 +67,7 @@ namespace MyAudioPlayer
             ConfigureButton(nextButton, "下一首");
             ConfigureButton(favoriteButton, "收藏当前");
             ConfigureButton(deleteButton, "删除当前");
-            ConfigureButton(deletePartButton, "删除当前文件或文件集");
+            ConfigureButton(deletePartButton, "删除当前播放文件");
             ConfigureButton(minimizeButton, "最小化");
 
             timeLabel.AutoSize = false;
