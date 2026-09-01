@@ -18,6 +18,7 @@ namespace MyAudioPlayer.PlayList
     internal abstract class PlayListBase
     {
         public string Title { get; set; } = "";
+        public float VolumeScale { get; set; } = 1.0f;
         public bool needDelPartButton = true;
         public bool needWebButton = true;
         //移动到下N/上N首

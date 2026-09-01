@@ -11,7 +11,23 @@ namespace MyAudioPlayer
 {
     public class Config
     {
-        public static List<KeyValuePair<string, string>> playLists = new List<KeyValuePair<string, string>>();
+        public class PlayListConfig
+        {
+            public string Type { get; set; } = "";
+            public string Path { get; set; } = "";
+            public float VolumeScale { get; set; } = 1.0f;
+
+            public PlayListConfig() { }
+
+            public PlayListConfig(string type, string path, float volumeScale = 1.0f)
+            {
+                Type = type;
+                Path = path;
+                VolumeScale = Math.Clamp(volumeScale, 0.0f, 1.0f);
+            }
+        }
+
+        public static List<PlayListConfig> playLists = new List<PlayListConfig>();
         public static string DLServerAddress = "";
         public static string DLSiteFavDir = "";
         public static string MusicFavDir = "";
@@ -43,24 +59,39 @@ namespace MyAudioPlayer
                                 && jsonObject[fieldInfo.Name]!.Type == JTokenType.Integer)
                                 fieldInfo.SetValue(null, jsonObject[fieldInfo.Name]!.ToObject<int>());
                         }
-                        else if(fieldInfo.FieldType == typeof(List<KeyValuePair<string, string>>))
+                        else if(fieldInfo.FieldType == typeof(List<PlayListConfig>))
                         {
                             if (jsonObject[fieldInfo.Name] != null
                                 && jsonObject[fieldInfo.Name]!.Type == JTokenType.Array)
-                            {
-                                List<KeyValuePair<string, string>> tmp = new List<KeyValuePair<string, string>>();
-                                foreach(var line in jsonObject[fieldInfo.Name]!.ToArray())
-                                    if(line!=null&&line!.Type== JTokenType.Array)
-                                    {
-                                        var arr = line.ToArray();
-                                        if (arr.Length == 2)
-                                            tmp.Add(new KeyValuePair<string, string>(arr[0].ToString(),arr[1].ToString()));
-                                    }
-                                fieldInfo.SetValue(null, tmp);
-                            }
+                                fieldInfo.SetValue(null, ParsePlayLists(jsonObject[fieldInfo.Name]!));
                         }
                 }
             }
+        }
+
+        private static List<PlayListConfig> ParsePlayLists(JToken token)
+        {
+            var tmp = new List<PlayListConfig>();
+            foreach(var line in token.ToArray())
+                if(line!=null&&line!.Type== JTokenType.Array)
+                {
+                    var arr = line.ToArray();
+                    if (arr.Length >= 2)
+                        tmp.Add(new PlayListConfig(
+                            arr[0].ToString(),
+                            arr[1].ToString(),
+                            ParseVolumeScale(arr.Length >= 3 ? arr[2] : null)));
+                }
+            return tmp;
+        }
+
+        private static float ParseVolumeScale(JToken? token)
+        {
+            if (token == null)
+                return 1.0f;
+            if (token.Type == JTokenType.Float || token.Type == JTokenType.Integer)
+                return Math.Clamp(token.ToObject<float>(), 0.0f, 1.0f);
+            return 1.0f;
         }
 
         public static void SaveTheme()

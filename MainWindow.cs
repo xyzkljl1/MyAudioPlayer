@@ -28,6 +28,7 @@ namespace MyAudioPlayer
         private Rectangle normalBoundsBeforeMini;
         private FormWindowState normalWindowStateBeforeMini;
         private bool normalTopMostBeforeMini;
+        private float currentPlayListVolumeScale = 1.0f;
 
         private sealed class ButtonVisualStyle
         {
@@ -123,8 +124,14 @@ namespace MyAudioPlayer
         }
         void OnVolumeSliderScrolled(object? sender, EventArgs e)
         {
-            //范围0-1
-            CurrentPlayer.SetVolume(Math.Clamp(volumeSlider.Value / 100.0f, .0f, 1.0f));
+            ApplyEffectiveVolume();
+        }
+
+        private void ApplyEffectiveVolume()
+        {
+            var userVolume = Math.Clamp(volumeSlider.Value / 100.0f, 0.0f, 1.0f);
+            var effectiveVolume = userVolume * Math.Clamp(currentPlayListVolumeScale, 0.0f, 1.0f);
+            CurrentPlayer.SetVolume(effectiveVolume);
         }
 
         private void SeekTo(int sec)
@@ -685,6 +692,8 @@ namespace MyAudioPlayer
                     return;
                 }
             }
+            currentPlayListVolumeScale = Math.Clamp(playLists[PlayListTab.SelectedIndex].VolumeScale, 0.0f, 1.0f);
+            ApplyEffectiveVolume();
             //显示信息
             titleBox.Text = playLists[PlayListTab.SelectedIndex].GetCurrentFileDesc();
             this.playSlider.Minimum = 0;
@@ -731,11 +740,20 @@ namespace MyAudioPlayer
         public void InitPlayListTree()
         {
             Config.LoadJson();
-            foreach (var pair in Config.playLists)
-                if (pair.Key == typeof(PlayListDLSite).Name)
-                    playLists.Add(new PlayListDLSite(pair.Value, this.OnFileEditBegin, this.OnFileEditEnd));
-                else if (pair.Key == typeof(PlayListLocalMusic).Name)
-                    playLists.Add(new PlayListLocalMusic(pair.Value, this.OnFileEditBegin, this.OnFileEditEnd));
+            foreach (var config in Config.playLists)
+            {
+                PlayListBase? playList = null;
+                if (config.Type == typeof(PlayListDLSite).Name)
+                    playList = new PlayListDLSite(config.Path, this.OnFileEditBegin, this.OnFileEditEnd);
+                else if (config.Type == typeof(PlayListLocalMusic).Name)
+                    playList = new PlayListLocalMusic(config.Path, this.OnFileEditBegin, this.OnFileEditEnd);
+
+                if (playList != null)
+                {
+                    playList.VolumeScale = Math.Clamp(config.VolumeScale, 0.0f, 1.0f);
+                    playLists.Add(playList);
+                }
+            }
 
             PlayListTab.SuspendLayout();
             foreach (var playList in playLists)

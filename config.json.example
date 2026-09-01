@@ -1,7 +1,8 @@
 {
   "playLists": [
-    [ "PlayListDLSite", "Z:\\DLSite1" ],
-    [ "PlayListDLSite", "Z:\\DLSite2" ]
+    [ "PlayListDLSite", "Z:\\DLSite1", 1.0 ],
+    [ "PlayListDLSite", "Z:\\DLSite2", 1.0 ],
+    [ "PlayListLocalMusic", "E:\\Music", 0.15 ]
 
   ],
   "DLServerAddress": "http://127.0.0.1:4567",
