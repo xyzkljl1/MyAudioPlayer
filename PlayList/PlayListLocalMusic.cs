@@ -373,12 +373,13 @@ namespace MyAudioPlayer.PlayList
             {
                 if (selectedNode.NextNode != null)
                     currentNode = selectedNode.NextNode;
-                else if (treeView.Nodes.Count == 0)
+                else if (treeView.Nodes.Count == 1)
                     currentNode = null;
                 else
                     currentNode = treeView.Nodes[0];
             }
             treeView.Nodes.Remove(selectedNode);
+            nodes.Remove(node);
             var fileInfo = node.fileInfo;
             //仅删除文件(移动到deleted)
             if (fileInfo.Exists)

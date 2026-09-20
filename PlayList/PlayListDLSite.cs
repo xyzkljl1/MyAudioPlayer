@@ -1552,7 +1552,7 @@ namespace MyAudioPlayer.PlayList
 
             if (currentWorkIndex == index)
             {
-                currentWorkIndex = nodes.Count == 0 ? -1 : Math.Min(index, nodes.Count - 1);
+                currentWorkIndex = nodes.Count == 0 ? -1 : index % nodes.Count;
                 currentFileSetIndex = 0;
                 currentFileIndex = 0;
                 currentCursorKind = IsValidWorkIndex(currentWorkIndex) ? CursorKind.Work : CursorKind.None;

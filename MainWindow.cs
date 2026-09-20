@@ -29,6 +29,7 @@ namespace MyAudioPlayer
         private FormWindowState normalWindowStateBeforeMini;
         private bool normalTopMostBeforeMini;
         private float currentPlayListVolumeScale = 1.0f;
+        private PlayListBase? playingPlayList;
 
         private sealed class ButtonVisualStyle
         {
@@ -72,7 +73,7 @@ namespace MyAudioPlayer
                 DelButton.Click += this.OnDelButtonClicked;
                 DelPartButton.Click += this.OnDelPartButtonClicked;
                 FavButton.Click += this.OnFavButtonClicked;
-                SelectCurrentButton.Click += delegate { playLists[PlayListTab.SelectedIndex].SelectCurrent(); };
+                SelectCurrentButton.Click += delegate { SelectCurrentPlaybackItem(); };
                 OpenLocalButton.Click += delegate { playLists[PlayListTab.SelectedIndex].OpenLocalSelected(); };
                 OpenWebButton.Click += delegate { playLists[PlayListTab.SelectedIndex].OpenWebSelected(); };
                 playSlider.ValueChanged += OnSliderValueChanged;
@@ -164,20 +165,30 @@ namespace MyAudioPlayer
 
         private void MoveOrStartCurrentPlayList(int offset)
         {
-            int currentIndex = PlayListTab.SelectedIndex;
-            if (currentIndex < 0 || currentIndex >= playLists.Count)
+            bool shouldStartPlayback = !CurrentPlayer.IsLoaded();
+            var playList = GetPlaybackOrSelectedPlayList();
+            if (playList is null)
                 return;
 
-            var playList = playLists[currentIndex];
-            bool shouldStartPlayback = !CurrentPlayer.IsLoaded();
             if (shouldStartPlayback)
                 playList.MoveToFirst();
             else
                 playList.MoveCurrent(offset);
-            ReloadCurrentFile();
-            if (shouldStartPlayback && CurrentPlayer.IsLoaded())
+            if (ReloadCurrentFile(playList) && shouldStartPlayback)
                 Play();
         }
+
+        private PlayListBase? GetPlaybackOrSelectedPlayList()
+        {
+            if (CurrentPlayer.IsLoaded() && playingPlayList is not null)
+                return playingPlayList;
+            int index = PlayListTab.SelectedIndex;
+            return index >= 0 && index < playLists.Count ? playLists[index] : null;
+        }
+
+        private PlayListBase? GetFileEditPlayList(object? sender) =>
+            sender as PlayListBase ?? GetPlaybackOrSelectedPlayList();
+
         void UnmountPlayStopEvent()
         {
             CurrentPlayer.PlayStopped -= this.OnPlayStopped;
@@ -189,56 +200,53 @@ namespace MyAudioPlayer
         void OnFileEditBegin(object? sender, MyFileEditEventArgs e)
         {
             //ManagedBass不锁文件，不需要stop
-            if (CurrentPlayer.IsPlaying())
+            if (ReferenceEquals(GetFileEditPlayList(sender), playingPlayList) && CurrentPlayer.IsPlaying())
                 e.needContinue = true;
         }
         void OnFileEditEnd(object? sender, MyFileEditEventArgs e)
         {
-            ReloadCurrentFile();
-            if (e.needContinue)
+            var playList = GetFileEditPlayList(sender);
+            if (playList is null || !ReferenceEquals(playList, playingPlayList))
+                return;
+
+            if (ReloadCurrentFile(playList) && e.needContinue && !CurrentPlayer.IsPlaying())
                 Play();
         }
-        void OnDelButtonClicked(object? sender, EventArgs e)
+
+        private void EditCurrentPlayList(Action<PlayListBase> edit, bool requiresLoaded = false)
         {
-            if (!CurrentPlayer.IsLoaded())
-                playLists[PlayListTab.SelectedIndex].DeleteCurrent();
-            else
-            {
-                var arg = new MyFileEditEventArgs();
-                OnFileEditBegin(null, arg);
-                playLists[PlayListTab.SelectedIndex].DeleteCurrent();
-                OnFileEditEnd(null, arg);
-            }
-        }
-        void OnDelPartButtonClicked(object? sender, EventArgs e)
-        {
-            if (!CurrentPlayer.IsLoaded())
+            if (requiresLoaded && !CurrentPlayer.IsLoaded())
                 return;
-            else
-            {
-                var arg = new MyFileEditEventArgs();
-                OnFileEditBegin(null, arg);
-                playLists[PlayListTab.SelectedIndex].DeleteCurrentFile();
-                OnFileEditEnd(null, arg);
-            }
-        }
-        void OnFavButtonClicked(object? sender, EventArgs e)
-        {
+
+            var playList = GetPlaybackOrSelectedPlayList();
+            if (playList is null)
+                return;
             if (!CurrentPlayer.IsLoaded())
-                playLists[PlayListTab.SelectedIndex].FavCurrent();
-            else
             {
-                var arg = new MyFileEditEventArgs();
-                OnFileEditBegin(null, arg);
-                playLists[PlayListTab.SelectedIndex].FavCurrent();
-                OnFileEditEnd(null, arg);
+                edit(playList);
+                return;
             }
+
+            var args = new MyFileEditEventArgs();
+            OnFileEditBegin(playList, args);
+            edit(playList);
+            OnFileEditEnd(playList, args);
         }
+
+        void OnDelButtonClicked(object? sender, EventArgs e) =>
+            EditCurrentPlayList(playList => playList.DeleteCurrent());
+
+        void OnDelPartButtonClicked(object? sender, EventArgs e) =>
+            EditCurrentPlayList(playList => playList.DeleteCurrentFile(), requiresLoaded: true);
+
+        void OnFavButtonClicked(object? sender, EventArgs e) =>
+            EditCurrentPlayList(playList => playList.FavCurrent());
         void Stop()
         {
             UnmountPlayStopEvent();
             CurrentPlayer.Stop();
             MountPlayStopEvent();
+            playingPlayList = null;
         }
         void Play()
         {
@@ -249,6 +257,17 @@ namespace MyAudioPlayer
         {
             CurrentPlayer.Pause();
             RefreshPlayButton();
+        }
+
+        private void SelectCurrentPlaybackItem()
+        {
+            var playList = GetPlaybackOrSelectedPlayList();
+            if (playList is null)
+                return;
+            int playListIndex = playLists.IndexOf(playList);
+            if (PlayListTab.SelectedIndex != playListIndex)
+                PlayListTab.SelectedIndex = playListIndex;
+            playList.SelectCurrent();
         }
 
         private void MountMiniModeInteractions()
@@ -333,20 +352,17 @@ namespace MyAudioPlayer
 
         private string GetCurrentMiniTitle()
         {
-            int currentIndex = PlayListTab.SelectedIndex;
-            if (currentIndex < 0 || currentIndex >= playLists.Count)
+            var playList = GetPlaybackOrSelectedPlayList();
+            if (playList is null)
                 return titleBox.Text;
 
-            var title = playLists[currentIndex].GetCurrentMiniTitle();
+            var title = playList.GetCurrentMiniTitle();
             return string.IsNullOrWhiteSpace(title) ? titleBox.Text : title;
         }
 
         private bool IsCurrentPlayListDelPartEnabled()
         {
-            int currentIndex = PlayListTab.SelectedIndex;
-            return currentIndex >= 0
-                && currentIndex < playLists.Count
-                && playLists[currentIndex].needDelPartButton;
+            return GetPlaybackOrSelectedPlayList()?.needDelPartButton == true;
         }
 
         private void MountThemeMenu()
@@ -665,19 +681,24 @@ namespace MyAudioPlayer
             SyncMiniPlayer();
         }
 
-        void ReloadCurrentFile()
+        private void ClearPlayback()
+        {
+            Stop();
+            titleBox.Text = "None";
+            playSlider.Value = 0;
+            playSlider.Maximum = 0;
+            RefreshPlayButton();
+        }
+
+        bool ReloadCurrentFile(PlayListBase playList)
         {
             bool playing = CurrentPlayer.IsPlaying();
             //从playlist获取当前文件
-            var currentFile = playLists[PlayListTab.SelectedIndex].GetCurrentFile();
+            var currentFile = playList.GetCurrentFile();
             if (currentFile == null)
             {
-                Stop();
-                titleBox.Text = "None";
-                playSlider.Value = 0;
-                playSlider.Maximum = 0;
-                SyncMiniPlayer();
-                return;
+                ClearPlayback();
+                return false;
             }
             if (currentFile!=CurrentPlayer.CurrentFile)
             {
@@ -688,21 +709,25 @@ namespace MyAudioPlayer
                 }
                 catch (Exception e)//也是文件有问题？如RJ01003442
                 {
+                    ClearPlayback();
                     MessageBox.Show($"Invalid File Cause Exception:{currentFile.FullName}/{e.Message}");
-                    return;
+                    return false;
                 }
             }
-            currentPlayListVolumeScale = Math.Clamp(playLists[PlayListTab.SelectedIndex].VolumeScale, 0.0f, 1.0f);
+            playingPlayList = playList;
+            currentPlayListVolumeScale = Math.Clamp(playList.VolumeScale, 0.0f, 1.0f);
             ApplyEffectiveVolume();
             //显示信息
-            titleBox.Text = playLists[PlayListTab.SelectedIndex].GetCurrentFileDesc();
+            titleBox.Text = playList.GetCurrentFileDesc();
             this.playSlider.Minimum = 0;
             this.playSlider.Maximum = CurrentPlayer.GetTotalLengthSec();
             this.playSlider.Value = CurrentPlayer.GetCurrentPositionSec();
+            DelPartButton.Enabled = playList.needDelPartButton;
             SyncMiniPlayer();
             //如果之前在播放则继续播放
             if (playing)
                 Play();
+            return true;
         }
         void OnPauseButtonClicked(object? sender, EventArgs e)
         {
@@ -715,10 +740,13 @@ namespace MyAudioPlayer
             //由audioDevice触发，不在主线程，需要用invoke
             this.Invoke(delegate ()
             {
+                var playList = playingPlayList;
+                if (playList is null)
+                    return;
                 //下一曲
-                playLists[PlayListTab.SelectedIndex].MoveCurrent(1);
-                ReloadCurrentFile();
-                Play();
+                playList.MoveCurrent(1);
+                if (ReloadCurrentFile(playList))
+                    Play();
             });
         }
         void OnCurrentPlayListChanged(object? sender, EventArgs e)
@@ -730,7 +758,7 @@ namespace MyAudioPlayer
                 foreach (var playList in playLists)
                     playList.UnmountDoubleClickEvent(this.PlayList_DoubleClicked);
                 playLists[currentIndex].MountDoubleClickEvent(this.PlayList_DoubleClicked);
-                DelPartButton.Enabled = playLists[currentIndex].needDelPartButton;
+                DelPartButton.Enabled = IsCurrentPlayListDelPartEnabled();
                 OpenWebButton.Enabled = playLists[currentIndex].needWebButton;
                 //暂定：不触发PlayList_SelectedIndexChanged，即继续播放之前的曲目
             }
@@ -786,8 +814,8 @@ namespace MyAudioPlayer
             int currentIndex = PlayListTab.SelectedIndex;
             if (currentIndex < 0 || currentIndex >= playLists.Count)
                 return;
-            ReloadCurrentFile();
-            Play();
+            if (ReloadCurrentFile(playLists[currentIndex]))
+                Play();
             Refresh();
         }
 

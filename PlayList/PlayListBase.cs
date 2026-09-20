@@ -65,11 +65,11 @@ namespace MyAudioPlayer.PlayList
         //子类不能直接调用OnFileEditBegin，需要在基类用一个函数包一下
         public void RasieFileEditBeginEvent(MyFileEditEventArgs args)
         {
-            OnFileEditBegin(null, args);
+            OnFileEditBegin(this, args);
         }
         public void RasieFileEditEndEvent(MyFileEditEventArgs args)
         {
-            OnFileEditEnd(null, args);
+            OnFileEditEnd(this, args);
         }
     }
 }

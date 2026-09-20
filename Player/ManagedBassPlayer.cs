@@ -55,12 +55,6 @@ namespace MyAudioPlayer.Player
         }
         public override void Stop()
         {
-            CurrentFile = null;
-            if (channel != InvalidChannel)
-                Bass.ChannelStop(channel);
-        }
-        public override void Shutdown()
-        {
             if (channel != InvalidChannel)
             {
                 Bass.ChannelStop(channel);
@@ -69,6 +63,10 @@ namespace MyAudioPlayer.Player
             }
             CurrentFile = null;
             buffer = Array.Empty<byte>();
+        }
+        public override void Shutdown()
+        {
+            Stop();
             Bass.Free();
         }
         public override void SetCurrentPositionSec(int seconds)
@@ -82,6 +80,7 @@ namespace MyAudioPlayer.Player
         }
         unsafe public override void Reload(FileInfo file) 
         {
+            Stop();
             CurrentFile= file;
             var filename = CurrentFile.FullName;
             //如果MusicLoad/SampleLoad->SampleGetChannel,ChannelSetSync会返回Handle错误，why?
