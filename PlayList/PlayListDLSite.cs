@@ -1484,10 +1484,15 @@ namespace MyAudioPlayer.PlayList
             if (fileSetIndex < 0 || fileSetIndex >= node.fileSets.Count)
                 return;
 
+            AFile? currentFile = null;
+            if (currentWorkIndex == workIndex && ResolveCurrentFile(out var resolvedCurrentFile))
+                currentFile = resolvedCurrentFile;
+
             if (fileIndex < 0)
                 DeleteFileSetAt(workIndex, fileSetIndex);
             else
                 DeleteFileAt(workIndex, fileSetIndex, fileIndex);
+            AfterPartDeleted(workIndex, currentFile);
         }
 
         private void DeleteFileSetAt(int workIndex, int fileSetIndex)
@@ -1501,7 +1506,6 @@ namespace MyAudioPlayer.PlayList
                     file.fileInfo.Delete();
 
             node.fileSets.RemoveAt(fileSetIndex);
-            AfterPartDeleted(workIndex);
         }
 
         private void DeleteFileAt(int workIndex, int fileSetIndex, int fileIndex)
@@ -1521,10 +1525,9 @@ namespace MyAudioPlayer.PlayList
                 node.fileSets.RemoveAt(fileSetIndex);
             if (node.fileSets.Count <= 0 && node.type == Node.NodeType.DLSite)
                 MarkEliminated(node);
-            AfterPartDeleted(workIndex);
         }
 
-        private void AfterPartDeleted(int workIndex)
+        private void AfterPartDeleted(int workIndex, AFile? previousCurrentFile)
         {
             if (!IsValidWorkIndex(workIndex))
                 return;
@@ -1535,8 +1538,26 @@ namespace MyAudioPlayer.PlayList
             }
 
             RefreshWorkTreeChildren(workIndex);
-            if (currentWorkIndex == workIndex && !ResolveCurrentFile(out _))
+            if (currentWorkIndex != workIndex)
+                return;
+            if (previousCurrentFile is not null
+                && TryFindFile(nodes[workIndex], previousCurrentFile, out var fileSetIndex, out var fileIndex))
+                SetCurrentToFile(workIndex, fileSetIndex, fileIndex);
+            else if (!ResolveCurrentFile(out _))
                 SetCurrentToFileSet(workIndex, 0);
+        }
+
+        private static bool TryFindFile(Node node, AFile target, out int fileSetIndex, out int fileIndex)
+        {
+            for (fileSetIndex = 0; fileSetIndex < node.fileSets.Count; fileSetIndex++)
+            {
+                fileIndex = node.fileSets[fileSetIndex].files.IndexOf(target);
+                if (fileIndex >= 0)
+                    return true;
+            }
+            fileSetIndex = -1;
+            fileIndex = -1;
+            return false;
         }
 
         private void RemoveWorkAt(int index)
