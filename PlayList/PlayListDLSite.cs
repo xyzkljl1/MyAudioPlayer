@@ -141,6 +141,18 @@ namespace MyAudioPlayer.PlayList
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
+        [DllImport("shlwapi.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern int StrCmpLogicalW(string left, string right);
+
+        private static int CompareNaturally(string left, string right)
+        {
+            int result = StrCmpLogicalW(left, right);
+            if (result != 0)
+                return result;
+            result = left.Length.CompareTo(right.Length);
+            return result != 0 ? result : StringComparer.Ordinal.Compare(left, right);
+        }
+
         public PlayListDLSite(string _rootDir, MyFileEditEventHandler _begin, MyFileEditEventHandler _end)
         {
             rootDir = new DirectoryInfo(_rootDir);
@@ -492,7 +504,7 @@ namespace MyAudioPlayer.PlayList
             var subDirs = new List<DirectoryInfo>();
             subDirs.Add(dirInfo);
             subDirs.AddRange(dirInfo.GetDirectories("*.*", SearchOption.AllDirectories));
-            subDirs.Sort((l, r) => l.FullName.CompareTo(r.FullName));
+            subDirs.Sort((l, r) => CompareNaturally(l.FullName, r.FullName));
             var fileMap = new Dictionary<string, List<FileInfo>>();
             {
                 var files = dirInfo.GetFiles("*.*", SearchOption.AllDirectories);
@@ -523,7 +535,7 @@ namespace MyAudioPlayer.PlayList
                     }
                 foreach (var fileSet in fileSets.Values)
                 {
-                    fileSet.files.Sort((l, r) => l.title.CompareTo(r.title));
+                    fileSet.files.Sort((l, r) => CompareNaturally(l.title, r.title));
                     ret.Add(fileSet);
                 }
             }
