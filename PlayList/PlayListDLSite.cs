@@ -101,8 +101,79 @@ namespace MyAudioPlayer.PlayList
             public bool IsPart { get { return kind == WorkTreeItemKind.FileSet || kind == WorkTreeItemKind.File; } }
         }
 
+        private sealed class SearchTagGroup
+        {
+            public string Label { get; }
+            public string[] Terms { get; }
+
+            public SearchTagGroup(string[] terms)
+            {
+                Label = terms[0];
+                Terms = terms;
+            }
+        }
+
+        private sealed class WheelScrollPanel : Panel
+        {
+            private bool snappingToRow = false;
+            public int ScrollUnit { get; set; } = 40;
+
+            private int GetAlignedMaximum()
+            {
+                int maximum = Math.Max(0, VerticalScroll.Maximum - VerticalScroll.LargeChange + 1);
+                return maximum / ScrollUnit * ScrollUnit;
+            }
+
+            public void ScrollByWheel(int delta)
+            {
+                int current = -AutoScrollPosition.Y;
+                int configuredLines = SystemInformation.MouseWheelScrollLines;
+                int rowCount = configuredLines < 0
+                    ? Math.Max(1, ClientSize.Height / ScrollUnit - 1)
+                    : Math.Max(1, configuredLines);
+                int currentRow = (int)Math.Round(current / (double)ScrollUnit);
+                int target = Math.Clamp(
+                    (currentRow - Math.Sign(delta) * rowCount) * ScrollUnit,
+                    0,
+                    GetAlignedMaximum());
+                AutoScrollPosition = new Point(0, target);
+            }
+
+            protected override void OnScroll(ScrollEventArgs se)
+            {
+                base.OnScroll(se);
+                if (snappingToRow || se.ScrollOrientation != ScrollOrientation.VerticalScroll ||
+                    se.Type != ScrollEventType.EndScroll)
+                    return;
+
+                int current = -AutoScrollPosition.Y;
+                int target = Math.Clamp(
+                    (int)Math.Round(current / (double)ScrollUnit) * ScrollUnit,
+                    0,
+                    GetAlignedMaximum());
+                if (target == current)
+                    return;
+
+                snappingToRow = true;
+                AutoScrollPosition = new Point(0, target);
+                snappingToRow = false;
+            }
+
+            protected override void OnMouseEnter(EventArgs e)
+            {
+                base.OnMouseEnter(e);
+                Focus();
+            }
+
+            protected override void OnMouseWheel(MouseEventArgs e)
+            {
+                ScrollByWheel(e.Delta);
+            }
+        }
+
         public static Regex workNameRegex = new Regex("^[RVBJ]{0,2}(?<number>[0-9]{3,8})");
         public static Regex seriesNameRegex = new Regex("^S ");
+        private const string SearchTagFileName = "content_tags.txt";
         private const int ScanPublishBatchSize = 500;
         // Z:\ASMR_ReliableR benchmark, 36,891 works / 566,674 files:
         // sequential 1556s, 4-way 667s, 8-way 612s, 16-way 707s, unlimited 858s.
@@ -111,8 +182,23 @@ namespace MyAudioPlayer.PlayList
         private static readonly SemaphoreSlim FileSetLoadSemaphore = new SemaphoreSlim(MaxConcurrentFileSetLoads);
 
         private readonly TableLayoutPanel mainControl = new TableLayoutPanel();
+        private readonly TableLayoutPanel searchPanel = new TableLayoutPanel();
         private readonly TextBox searchBox = new TextBox();
+        private readonly Button searchTagButton = new Button();
+        private readonly ToolStripDropDown searchTagDropDown = new ToolStripDropDown();
+        private readonly ToolTip searchTagToolTip = new ToolTip();
         private readonly System.Windows.Forms.Timer searchTimer = new System.Windows.Forms.Timer { Interval = 200 };
+        private static readonly Lazy<IReadOnlyList<SearchTagGroup>> ConfiguredSearchTagGroups =
+            new Lazy<IReadOnlyList<SearchTagGroup>>(LoadSearchTagGroups, LazyThreadSafetyMode.ExecutionAndPublication);
+        private readonly Dictionary<string, string[]> searchTagTermsByLabel =
+            new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<string[]> activeSearchTerms = new List<string[]>();
+        private readonly Dictionary<string, RadioButton> searchTagOptions =
+            new Dictionary<string, RadioButton>(StringComparer.OrdinalIgnoreCase);
+        private TableLayoutPanel? searchTagPickerRoot;
+        private WheelScrollPanel? searchTagScrollPanel;
+        private Button? clearSearchTagButton;
+        private bool syncingSearchTagSelection = false;
         private ListView worksListView = new ListView();
         private DirectoryInfo rootDir;
         private string dlServer;
@@ -138,6 +224,7 @@ namespace MyAudioPlayer.PlayList
         private int reloadGeneration = 0;
         private bool resetVirtualViewportOnNextBatch = false;
         private string searchQuery = "";
+        private bool searchTagPickerInitialized = false;
         private event TreeNodeMouseClickEventHandler? mountedDoubleClickHandlers;
         private const int WM_VSCROLL = 0x0115;
         private const int SB_TOP = 6;
@@ -164,6 +251,9 @@ namespace MyAudioPlayer.PlayList
             favDir = new DirectoryInfo(Config.DLSiteFavDir);
             Title = "DL-" + rootDir.Name;
 
+            foreach (var group in ConfiguredSearchTagGroups.Value)
+                searchTagTermsByLabel[group.Label] = group.Terms;
+
             mainControl.Dock = DockStyle.Fill;
             mainControl.Margin = Padding.Empty;
             mainControl.Padding = Padding.Empty;
@@ -173,12 +263,47 @@ namespace MyAudioPlayer.PlayList
             mainControl.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             mainControl.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
+            searchPanel.Dock = DockStyle.Fill;
+            searchPanel.AutoSize = true;
+            searchPanel.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            searchPanel.Margin = Padding.Empty;
+            searchPanel.Padding = Padding.Empty;
+            searchPanel.ColumnCount = 2;
+            searchPanel.RowCount = 1;
+            searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            searchPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            searchPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
             searchBox.Dock = DockStyle.Fill;
-            searchBox.Margin = new Padding(5, 5, 5, 4);
+            searchBox.Margin = new Padding(5, 5, 4, 4);
             searchBox.PlaceholderText = "搜索作品标题";
             searchBox.BorderStyle = BorderStyle.FixedSingle;
             searchBox.TextChanged += SearchBox_TextChanged;
             searchTimer.Tick += SearchTimer_Tick;
+
+            searchTagButton.AutoSize = false;
+            searchTagButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            searchTagButton.Dock = DockStyle.None;
+            searchTagButton.Margin = new Padding(0, 5, 5, 4);
+            searchTagButton.MinimumSize = new Size(80, searchBox.PreferredHeight);
+            searchTagButton.MaximumSize = new Size(80, searchBox.PreferredHeight);
+            searchTagButton.Size = new Size(80, searchBox.PreferredHeight);
+            searchTagButton.Padding = Padding.Empty;
+            searchTagButton.Text = "标签 ▼";
+            searchTagButton.TextAlign = ContentAlignment.MiddleCenter;
+            searchTagButton.TabStop = false;
+            searchTagButton.FlatStyle = FlatStyle.Flat;
+            searchTagButton.UseVisualStyleBackColor = false;
+            searchTagButton.Enabled = ConfiguredSearchTagGroups.Value.Count > 0;
+            searchTagButton.Click += SearchTagButton_Click;
+
+            searchTagDropDown.AutoClose = true;
+            searchTagDropDown.AutoSize = false;
+            searchTagDropDown.Margin = Padding.Empty;
+            searchTagDropDown.Padding = Padding.Empty;
+
+            searchPanel.Controls.Add(searchBox, 0, 0);
+            searchPanel.Controls.Add(searchTagButton, 1, 0);
 
             worksListView.Dock = DockStyle.Fill;
             worksListView.Margin = Padding.Empty;
@@ -197,7 +322,7 @@ namespace MyAudioPlayer.PlayList
             worksListView.DoubleClick += this.WorksListView_DoubleClick;
             worksListView.MouseClick += this.WorksListView_MouseClick;
             worksListView.Resize += delegate { ResizeWorkListColumns(); };
-            mainControl.Controls.Add(searchBox, 0, 0);
+            mainControl.Controls.Add(searchPanel, 0, 0);
             mainControl.Controls.Add(worksListView, 0, 1);
 
             httpClient = new HttpClient();
@@ -216,14 +341,57 @@ namespace MyAudioPlayer.PlayList
         {
             currentTheme = theme;
             mainControl.BackColor = theme.SurfaceColor;
+            searchPanel.BackColor = theme.SurfaceColor;
             searchBox.BackColor = theme.ListBackColor;
             searchBox.ForeColor = theme.TextColor;
+            searchTagButton.BackColor = theme.ButtonBackColor;
+            searchTagButton.ForeColor = theme.ButtonIconColor;
+            searchTagButton.FlatAppearance.BorderSize = 1;
+            searchTagButton.FlatAppearance.BorderColor = theme.BorderColor;
+            searchTagButton.FlatAppearance.MouseOverBackColor = theme.ButtonHoverColor;
+            searchTagButton.FlatAppearance.MouseDownBackColor = theme.ButtonDownColor;
+            searchTagDropDown.BackColor = theme.SurfaceColor;
+            searchTagDropDown.ForeColor = theme.TextColor;
+            ApplySearchTagPickerTheme();
             worksListView.BackColor = theme.ListBackColor;
             worksListView.ForeColor = theme.ListForeColor;
             worksListView.BorderStyle = BorderStyle.None;
             contextMenuStrip.BackColor = theme.SurfaceColor;
             contextMenuStrip.ForeColor = theme.TextColor;
             worksListView.Invalidate();
+        }
+
+        private static IReadOnlyList<SearchTagGroup> LoadSearchTagGroups()
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, SearchTagFileName);
+            if (!File.Exists(path))
+                return Array.Empty<SearchTagGroup>();
+
+            try
+            {
+                var groups = new List<SearchTagGroup>();
+                var labels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var rawLine in File.ReadLines(path))
+                {
+                    var line = rawLine.Trim();
+                    if (line.Length == 0 || line.StartsWith('#'))
+                        continue;
+
+                    var terms = line
+                        .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+                    if (terms.Length == 0 || !labels.Add(terms[0]))
+                        continue;
+                    groups.Add(new SearchTagGroup(terms));
+                }
+                return groups;
+            }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+            {
+                Console.WriteLine($"Failed to load search tags from {path}: {exception.Message}");
+                return Array.Empty<SearchTagGroup>();
+            }
         }
 
         private void WorksListView_DrawColumnHeader(object? sender, DrawListViewColumnHeaderEventArgs e)
@@ -270,6 +438,253 @@ namespace MyAudioPlayer.PlayList
             searchTimer.Start();
         }
 
+        private void SearchTagButton_Click(object? sender, EventArgs e)
+        {
+            EnsureSearchTagPicker();
+            SyncSearchTagSelection();
+            int x = searchTagButton.Width - searchTagDropDown.Width;
+            searchTagDropDown.Show(searchTagButton, new Point(x, searchTagButton.Height + 1));
+        }
+
+        private void EnsureSearchTagPicker()
+        {
+            if (searchTagPickerInitialized)
+                return;
+
+            searchTagPickerInitialized = true;
+            var groups = ConfiguredSearchTagGroups.Value;
+            var workingArea = Screen.FromControl(searchTagButton).WorkingArea;
+            int pickerWidth = Math.Max(360, Math.Min(760, workingArea.Width - 48));
+            int columnCount = pickerWidth >= 700 ? 4 : pickerWidth >= 520 ? 3 : 2;
+            int headerHeight = 42;
+            int rowHeight = Math.Max(42, searchTagButton.Font.Height + 16);
+            int maximumPickerHeight = Math.Max(300, Math.Min(520, workingArea.Height - 120));
+            int visibleRowCount = Math.Max(6, (maximumPickerHeight - headerHeight) / rowHeight);
+            int pickerHeight = headerHeight + visibleRowCount * rowHeight;
+            int columnWidth = Math.Max(150,
+                (pickerWidth - SystemInformation.VerticalScrollBarWidth - 12) / columnCount);
+            int rowCount = (groups.Count + columnCount - 1) / columnCount;
+
+            searchTagPickerRoot = new TableLayoutPanel
+            {
+                AutoSize = false,
+                BackColor = currentTheme.SurfaceColor,
+                ColumnCount = 1,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+                RowCount = 2,
+                Size = new Size(pickerWidth, pickerHeight)
+            };
+            searchTagPickerRoot.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            searchTagPickerRoot.RowStyles.Add(new RowStyle(SizeType.Absolute, headerHeight));
+            searchTagPickerRoot.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            var header = new TableLayoutPanel
+            {
+                BackColor = currentTheme.SurfaceColor,
+                ColumnCount = 2,
+                Dock = DockStyle.Fill,
+                Margin = Padding.Empty,
+                Padding = new Padding(8, 6, 8, 5),
+                RowCount = 1
+            };
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            header.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            var titleLabel = new Label
+            {
+                AutoEllipsis = true,
+                Dock = DockStyle.Fill,
+                Text = $"标签 ({groups.Count})",
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            clearSearchTagButton = new Button
+            {
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                FlatStyle = FlatStyle.Flat,
+                Margin = Padding.Empty,
+                Padding = new Padding(8, 0, 8, 0),
+                TabStop = false,
+                Text = "清除"
+            };
+            clearSearchTagButton.Click += delegate
+            {
+                SetSingleSearchTag(null);
+                SyncSearchTagSelection();
+            };
+            header.Controls.Add(titleLabel, 0, 0);
+            header.Controls.Add(clearSearchTagButton, 1, 0);
+
+            searchTagScrollPanel = new WheelScrollPanel
+            {
+                AutoScroll = true,
+                BackColor = currentTheme.SurfaceColor,
+                Dock = DockStyle.Fill,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+                ScrollUnit = rowHeight,
+                TabStop = true
+            };
+            var grid = new TableLayoutPanel
+            {
+                AutoSize = false,
+                BackColor = currentTheme.SurfaceColor,
+                ColumnCount = columnCount,
+                Location = Point.Empty,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+                RowCount = rowCount,
+                Size = new Size(columnWidth * columnCount, rowHeight * rowCount)
+            };
+            for (int column = 0; column < columnCount; column++)
+                grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, columnWidth));
+            for (int row = 0; row < rowCount; row++)
+                grid.RowStyles.Add(new RowStyle(SizeType.Absolute, rowHeight));
+
+            for (int index = 0; index < groups.Count; index++)
+            {
+                var group = groups[index];
+                var option = new RadioButton
+                {
+                    Appearance = Appearance.Button,
+                    AutoEllipsis = true,
+                    Dock = DockStyle.Fill,
+                    FlatStyle = FlatStyle.Flat,
+                    Margin = new Padding(3),
+                    Padding = new Padding(7, 0, 7, 0),
+                    Tag = group,
+                    Text = group.Label,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    UseCompatibleTextRendering = false
+                };
+                option.CheckedChanged += SearchTagOption_CheckedChanged;
+                option.MouseWheel += delegate (object? sender, MouseEventArgs e)
+                {
+                    searchTagScrollPanel?.ScrollByWheel(e.Delta);
+                };
+                searchTagOptions[group.Label] = option;
+                searchTagToolTip.SetToolTip(option, string.Join(" / ", group.Terms));
+                grid.Controls.Add(option, index % columnCount, index / columnCount);
+            }
+
+            searchTagScrollPanel.Controls.Add(grid);
+            searchTagPickerRoot.Controls.Add(header, 0, 0);
+            searchTagPickerRoot.Controls.Add(searchTagScrollPanel, 0, 1);
+
+            var host = new ToolStripControlHost(searchTagPickerRoot)
+            {
+                AutoSize = false,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+                Size = searchTagPickerRoot.Size
+            };
+            searchTagDropDown.Items.Add(host);
+            searchTagDropDown.Size = searchTagPickerRoot.Size;
+            ApplySearchTagPickerTheme();
+        }
+
+        private void SearchTagOption_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (sender is not RadioButton option || option.Tag is not SearchTagGroup group)
+                return;
+
+            UpdateSearchTagOptionAppearance(option);
+            if (!syncingSearchTagSelection && option.Checked)
+                SetSingleSearchTag(group.Label);
+        }
+
+        private void SetSingleSearchTag(string? label)
+        {
+            var tokens = SplitSearchQuery(searchBox.Text)
+                .Where(token => !searchTagTermsByLabel.ContainsKey(token))
+                .ToList();
+            if (label is not null)
+                tokens.Add(label);
+            searchBox.Text = string.Join(" ", tokens);
+            searchBox.SelectionStart = searchBox.TextLength;
+        }
+
+        private void SyncSearchTagSelection()
+        {
+            string? selectedLabel = SplitSearchQuery(searchBox.Text)
+                .FirstOrDefault(token => searchTagTermsByLabel.ContainsKey(token));
+
+            syncingSearchTagSelection = true;
+            foreach (var pair in searchTagOptions)
+            {
+                pair.Value.Checked = string.Equals(
+                    pair.Key,
+                    selectedLabel,
+                    StringComparison.OrdinalIgnoreCase);
+                UpdateSearchTagOptionAppearance(pair.Value);
+            }
+            syncingSearchTagSelection = false;
+        }
+
+        private void ApplySearchTagPickerTheme()
+        {
+            if (searchTagPickerRoot is null)
+                return;
+
+            ApplySearchTagContainerTheme(searchTagPickerRoot);
+            if (clearSearchTagButton is not null)
+            {
+                clearSearchTagButton.BackColor = currentTheme.ButtonBackColor;
+                clearSearchTagButton.ForeColor = currentTheme.ButtonIconColor;
+                clearSearchTagButton.FlatAppearance.BorderSize = 1;
+                clearSearchTagButton.FlatAppearance.BorderColor = currentTheme.BorderColor;
+                clearSearchTagButton.FlatAppearance.MouseOverBackColor = currentTheme.ButtonHoverColor;
+                clearSearchTagButton.FlatAppearance.MouseDownBackColor = currentTheme.ButtonDownColor;
+            }
+            foreach (var option in searchTagOptions.Values)
+            {
+                option.FlatAppearance.BorderSize = 1;
+                option.FlatAppearance.BorderColor = currentTheme.BorderColor;
+                option.FlatAppearance.MouseOverBackColor = currentTheme.ButtonHoverColor;
+                option.FlatAppearance.MouseDownBackColor = currentTheme.ButtonDownColor;
+                option.FlatAppearance.CheckedBackColor = currentTheme.AccentColor;
+                UpdateSearchTagOptionAppearance(option);
+            }
+        }
+
+        private void ApplySearchTagContainerTheme(Control container)
+        {
+            container.BackColor = currentTheme.SurfaceColor;
+            container.ForeColor = currentTheme.TextColor;
+            foreach (Control child in container.Controls)
+                if (child is Panel || child is TableLayoutPanel || child is Label)
+                    ApplySearchTagContainerTheme(child);
+        }
+
+        private void UpdateSearchTagOptionAppearance(RadioButton option)
+        {
+            option.BackColor = option.Checked
+                ? currentTheme.AccentColor
+                : currentTheme.ButtonBackColor;
+            option.ForeColor = option.Checked
+                ? currentTheme.AccentIconColor
+                : currentTheme.ButtonIconColor;
+        }
+
+        private static string[] SplitSearchQuery(string query)
+        {
+            return query.Split(
+                new[] { ' ', '\t', '\r', '\n' },
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        private List<string[]> BuildSearchTerms(string query)
+        {
+            var terms = new List<string[]>();
+            foreach (var token in SplitSearchQuery(query))
+                terms.Add(searchTagTermsByLabel.TryGetValue(token, out var groupTerms)
+                    ? groupTerms
+                    : new[] { token });
+            return terms;
+        }
+
         private void SearchTimer_Tick(object? sender, EventArgs e)
         {
             searchTimer.Stop();
@@ -277,6 +692,8 @@ namespace MyAudioPlayer.PlayList
             if (nextQuery == searchQuery)
                 return;
             searchQuery = nextQuery;
+            activeSearchTerms.Clear();
+            activeSearchTerms.AddRange(BuildSearchTerms(nextQuery));
             worksListView.SelectedIndices.Clear();
             RebuildVisibleItems();
             RefreshVirtualViewport(true);
@@ -748,7 +1165,7 @@ namespace MyAudioPlayer.PlayList
         {
             if (item.IsWork)
             {
-                if (item.title.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                if (MatchesSearch(item.title))
                     visibleItems.Add(item);
                 return;
             }
@@ -762,6 +1179,15 @@ namespace MyAudioPlayer.PlayList
                 AddFilteredVisibleItem(child);
             if (visibleItems.Count == childStartIndex)
                 visibleItems.RemoveAt(seriesIndex);
+        }
+
+        private bool MatchesSearch(string title)
+        {
+            foreach (var alternativeTerms in activeSearchTerms)
+                if (!alternativeTerms.Any(term =>
+                    title.Contains(term, StringComparison.OrdinalIgnoreCase)))
+                    return false;
+            return true;
         }
 
         private string GetTreeText(WorkTreeItem item)
