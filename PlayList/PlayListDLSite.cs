@@ -101,7 +101,7 @@ namespace MyAudioPlayer.PlayList
             public bool IsPart { get { return kind == WorkTreeItemKind.FileSet || kind == WorkTreeItemKind.File; } }
         }
 
-        public static Regex workNameRegex = new Regex("^[RVBJ]{0,2}[0-9]{3,8}");
+        public static Regex workNameRegex = new Regex("^[RVBJ]{0,2}(?<number>[0-9]{3,8})");
         public static Regex seriesNameRegex = new Regex("^S ");
         private const int ScanPublishBatchSize = 500;
         // Z:\ASMR_ReliableR benchmark, 36,891 works / 566,674 files:
@@ -469,6 +469,7 @@ namespace MyAudioPlayer.PlayList
                 return;
             }
 
+            var workDirs = new List<DirectoryInfo>();
             var seriesDirs = new List<DirectoryInfo>();
             try
             {
@@ -477,7 +478,7 @@ namespace MyAudioPlayer.PlayList
                     if (!IsCurrentReloadGeneration(generation))
                         return;
                     if (workNameRegex.IsMatch(dirInfo.Name))
-                        AddPendingWorkItem(CreateDLSiteNode(dirInfo), parentItem, pendingItems, generation);
+                        workDirs.Add(dirInfo);
                     else if (seriesNameRegex.IsMatch(dirInfo.Name))
                         seriesDirs.Add(dirInfo);
                 }
@@ -488,6 +489,14 @@ namespace MyAudioPlayer.PlayList
                 return;
             }
 
+            workDirs.Sort(CompareWorkDirectoriesByNumberDescending);
+            foreach (var dirInfo in workDirs)
+            {
+                if (!IsCurrentReloadGeneration(generation))
+                    return;
+                AddPendingWorkItem(CreateDLSiteNode(dirInfo), parentItem, pendingItems, generation);
+            }
+
             foreach (var dirInfo in seriesDirs)
             {
                 if (!IsCurrentReloadGeneration(generation))
@@ -496,6 +505,22 @@ namespace MyAudioPlayer.PlayList
                 AddPendingItem(seriesItem, pendingItems, generation);
                 LoadFilesImpl(dirInfo, seriesItem, pendingItems, generation);
             }
+        }
+
+        private static int CompareWorkDirectoriesByNumberDescending(DirectoryInfo left, DirectoryInfo right)
+        {
+            long leftNumber = GetWorkNumber(left.Name);
+            long rightNumber = GetWorkNumber(right.Name);
+            int result = rightNumber.CompareTo(leftNumber);
+            return result != 0 ? result : CompareNaturally(left.Name, right.Name);
+        }
+
+        private static long GetWorkNumber(string name)
+        {
+            var match = workNameRegex.Match(name);
+            return match.Success && long.TryParse(match.Groups["number"].Value, out long number)
+                ? number
+                : -1;
         }
 
         private static List<AFileSet> LoadFileSetsFromDir(DirectoryInfo dirInfo)
