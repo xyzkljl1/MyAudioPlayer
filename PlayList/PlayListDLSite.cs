@@ -1166,7 +1166,7 @@ namespace MyAudioPlayer.PlayList
             if (item.IsWork)
             {
                 if (MatchesSearch(item.title))
-                    visibleItems.Add(item);
+                    AddVisibleItem(item);
                 return;
             }
             if (!item.IsSeries)
@@ -1198,7 +1198,7 @@ namespace MyAudioPlayer.PlayList
 
         private string GetTreeMarker(WorkTreeItem item)
         {
-            if (searchQuery.Length > 0)
+            if (searchQuery.Length > 0 && item.IsSeries)
                 return "    ";
             if (item.loading)
                 return "[...] ";
@@ -1266,7 +1266,7 @@ namespace MyAudioPlayer.PlayList
 
         private async Task ToggleTreeItemAsync(WorkTreeItem item)
         {
-            if (searchQuery.Length > 0)
+            if (searchQuery.Length > 0 && item.IsSeries)
                 return;
             if (!CanExpandItem(item))
                 return;
