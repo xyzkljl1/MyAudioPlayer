@@ -110,6 +110,9 @@ namespace MyAudioPlayer.PlayList
         private const int MaxConcurrentFileSetLoads = 8;
         private static readonly SemaphoreSlim FileSetLoadSemaphore = new SemaphoreSlim(MaxConcurrentFileSetLoads);
 
+        private readonly TableLayoutPanel mainControl = new TableLayoutPanel();
+        private readonly TextBox searchBox = new TextBox();
+        private readonly System.Windows.Forms.Timer searchTimer = new System.Windows.Forms.Timer { Interval = 200 };
         private ListView worksListView = new ListView();
         private DirectoryInfo rootDir;
         private string dlServer;
@@ -134,6 +137,7 @@ namespace MyAudioPlayer.PlayList
         private readonly SemaphoreSlim reloadSemaphore = new SemaphoreSlim(1, 1);
         private int reloadGeneration = 0;
         private bool resetVirtualViewportOnNextBatch = false;
+        private string searchQuery = "";
         private event TreeNodeMouseClickEventHandler? mountedDoubleClickHandlers;
         private const int WM_VSCROLL = 0x0115;
         private const int SB_TOP = 6;
@@ -160,7 +164,24 @@ namespace MyAudioPlayer.PlayList
             favDir = new DirectoryInfo(Config.DLSiteFavDir);
             Title = "DL-" + rootDir.Name;
 
+            mainControl.Dock = DockStyle.Fill;
+            mainControl.Margin = Padding.Empty;
+            mainControl.Padding = Padding.Empty;
+            mainControl.ColumnCount = 1;
+            mainControl.RowCount = 2;
+            mainControl.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            mainControl.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            mainControl.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            searchBox.Dock = DockStyle.Fill;
+            searchBox.Margin = new Padding(5, 5, 5, 4);
+            searchBox.PlaceholderText = "搜索作品标题";
+            searchBox.BorderStyle = BorderStyle.FixedSingle;
+            searchBox.TextChanged += SearchBox_TextChanged;
+            searchTimer.Tick += SearchTimer_Tick;
+
             worksListView.Dock = DockStyle.Fill;
+            worksListView.Margin = Padding.Empty;
             worksListView.View = View.Details;
             worksListView.FullRowSelect = true;
             worksListView.HideSelection = false;
@@ -176,6 +197,8 @@ namespace MyAudioPlayer.PlayList
             worksListView.DoubleClick += this.WorksListView_DoubleClick;
             worksListView.MouseClick += this.WorksListView_MouseClick;
             worksListView.Resize += delegate { ResizeWorkListColumns(); };
+            mainControl.Controls.Add(searchBox, 0, 0);
+            mainControl.Controls.Add(worksListView, 0, 1);
 
             httpClient = new HttpClient();
             contextMenuStripItemFav = contextMenuStrip.Items.Add("Fav");
@@ -192,6 +215,9 @@ namespace MyAudioPlayer.PlayList
         public override void ApplyTheme(PlayerTheme theme)
         {
             currentTheme = theme;
+            mainControl.BackColor = theme.SurfaceColor;
+            searchBox.BackColor = theme.ListBackColor;
+            searchBox.ForeColor = theme.TextColor;
             worksListView.BackColor = theme.ListBackColor;
             worksListView.ForeColor = theme.ListForeColor;
             worksListView.BorderStyle = BorderStyle.None;
@@ -235,7 +261,25 @@ namespace MyAudioPlayer.PlayList
 
         public override Control GetMainControl()
         {
-            return worksListView;
+            return mainControl;
+        }
+
+        private void SearchBox_TextChanged(object? sender, EventArgs e)
+        {
+            searchTimer.Stop();
+            searchTimer.Start();
+        }
+
+        private void SearchTimer_Tick(object? sender, EventArgs e)
+        {
+            searchTimer.Stop();
+            string nextQuery = searchBox.Text.Trim();
+            if (nextQuery == searchQuery)
+                return;
+            searchQuery = nextQuery;
+            worksListView.SelectedIndices.Clear();
+            RebuildVisibleItems();
+            RefreshVirtualViewport(true);
         }
 
         private void WorksListView_RetrieveVirtualItem(object? sender, RetrieveVirtualItemEventArgs e)
@@ -678,8 +722,16 @@ namespace MyAudioPlayer.PlayList
         private void RebuildVisibleItems()
         {
             visibleItems.Clear();
-            foreach (var item in rootItems)
-                AddVisibleItem(item);
+            if (searchQuery.Length == 0)
+            {
+                foreach (var item in rootItems)
+                    AddVisibleItem(item);
+            }
+            else
+            {
+                foreach (var item in rootItems)
+                    AddFilteredVisibleItem(item);
+            }
             worksListView.VirtualListSize = visibleItems.Count;
         }
 
@@ -692,14 +744,36 @@ namespace MyAudioPlayer.PlayList
                 AddVisibleItem(child);
         }
 
-        private static string GetTreeText(WorkTreeItem item)
+        private void AddFilteredVisibleItem(WorkTreeItem item)
+        {
+            if (item.IsWork)
+            {
+                if (item.title.Contains(searchQuery, StringComparison.OrdinalIgnoreCase))
+                    visibleItems.Add(item);
+                return;
+            }
+            if (!item.IsSeries)
+                return;
+
+            int seriesIndex = visibleItems.Count;
+            visibleItems.Add(item);
+            int childStartIndex = visibleItems.Count;
+            foreach (var child in item.children)
+                AddFilteredVisibleItem(child);
+            if (visibleItems.Count == childStartIndex)
+                visibleItems.RemoveAt(seriesIndex);
+        }
+
+        private string GetTreeText(WorkTreeItem item)
         {
             var marker = GetTreeMarker(item);
             return GetIndent(item) + marker + item.title;
         }
 
-        private static string GetTreeMarker(WorkTreeItem item)
+        private string GetTreeMarker(WorkTreeItem item)
         {
+            if (searchQuery.Length > 0)
+                return "    ";
             if (item.loading)
                 return "[...] ";
             if (!CanExpandItem(item))
@@ -766,6 +840,8 @@ namespace MyAudioPlayer.PlayList
 
         private async Task ToggleTreeItemAsync(WorkTreeItem item)
         {
+            if (searchQuery.Length > 0)
+                return;
             if (!CanExpandItem(item))
                 return;
 
