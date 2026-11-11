@@ -244,7 +244,11 @@ namespace MyAudioPlayer.PlayList
             return result != 0 ? result : StringComparer.Ordinal.Compare(left, right);
         }
 
-        public PlayListDLSite(string _rootDir, MyFileEditEventHandler _begin, MyFileEditEventHandler _end)
+        public PlayListDLSite(
+            string _rootDir,
+            MyFileEditEventHandler _begin,
+            MyFileEditEventHandler _end,
+            string? restoreCurrentPath = null)
         {
             rootDir = new DirectoryInfo(_rootDir);
             dlServer = Config.DLServerAddress;
@@ -334,7 +338,7 @@ namespace MyAudioPlayer.PlayList
             contextMenuStrip.ItemClicked += this.ContextMenuClicked;
 
             MountFileEditEvent(_begin, _end);
-            ReloadFromLocal(false);
+            ReloadFromLocal(false, restoreCurrentPath);
         }
 
         public override void ApplyTheme(PlayerTheme theme)
@@ -847,10 +851,10 @@ namespace MyAudioPlayer.PlayList
             worksListView.Invalidate();
         }
 
-        private void ReloadFromLocal(bool resetViewport)
+        private void ReloadFromLocal(bool resetViewport, string? restoreCurrentPath = null)
         {
             int generation = Interlocked.Increment(ref reloadGeneration);
-            string? currentRootPath = GetCurrentWorkRootPath();
+            string? currentRootPath = restoreCurrentPath ?? GetCurrentWorkRootPath();
 
             Task.Run(() =>
             {
@@ -1595,6 +1599,7 @@ namespace MyAudioPlayer.PlayList
                 {
                     SelectTreeItem(item);
                     RefreshVirtualViewport(false);
+                    RaiseSessionItemRestored();
                 }
             });
         }
@@ -1784,6 +1789,9 @@ namespace MyAudioPlayer.PlayList
                 return;
             SelectTreeItem(item);
         }
+
+        public override string SessionPath { get { return rootDir.FullName; } }
+        public override string? CurrentSessionItemPath { get { return GetCurrentWorkRootPath(); } }
 
         private void MoveCurrentNext()
         {

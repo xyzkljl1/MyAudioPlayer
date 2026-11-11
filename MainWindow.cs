@@ -768,17 +768,31 @@ namespace MyAudioPlayer
         public void InitPlayListTree()
         {
             Config.LoadJson();
+            var sessionState = SessionState.Load();
             foreach (var config in Config.playLists)
             {
                 PlayListBase? playList = null;
+                string? restoreCurrentPath = sessionState.Matches(config.Type, config.Path)
+                    ? sessionState.CurrentItemPath
+                    : null;
                 if (config.Type == typeof(PlayListDLSite).Name)
-                    playList = new PlayListDLSite(config.Path, this.OnFileEditBegin, this.OnFileEditEnd);
+                    playList = new PlayListDLSite(
+                        config.Path,
+                        this.OnFileEditBegin,
+                        this.OnFileEditEnd,
+                        restoreCurrentPath);
                 else if (config.Type == typeof(PlayListLocalMusic).Name)
-                    playList = new PlayListLocalMusic(config.Path, this.OnFileEditBegin, this.OnFileEditEnd);
+                    playList = new PlayListLocalMusic(
+                        config.Path,
+                        this.OnFileEditBegin,
+                        this.OnFileEditEnd,
+                        restoreCurrentPath);
 
                 if (playList != null)
                 {
                     playList.VolumeScale = Math.Clamp(config.VolumeScale, 0.0f, 1.0f);
+                    if (!string.IsNullOrEmpty(restoreCurrentPath))
+                        playList.SessionItemRestored += OnSessionItemRestored;
                     playLists.Add(playList);
                 }
             }
@@ -803,12 +817,28 @@ namespace MyAudioPlayer
             PlayListTab.ResumeLayout(false);
             if (playLists.Count > 0)
             {
-                PlayListTab.SelectTab(0);
+                int restoredIndex = playLists.FindIndex(playList => sessionState.Matches(
+                    playList.GetType().Name,
+                    playList.SessionPath));
+                PlayListTab.SelectTab(restoredIndex >= 0 ? restoredIndex : 0);
                 OnCurrentPlayListChanged(null, new EventArgs());
             }
             ApplyThemeToChildControls(DownPanel);
             PlayListTab.Invalidate();
         }
+
+        private void OnSessionItemRestored(object? sender, EventArgs e)
+        {
+            if (sender is not PlayListBase playList)
+                return;
+            playList.SessionItemRestored -= OnSessionItemRestored;
+
+            int index = playLists.IndexOf(playList);
+            if (index < 0 || PlayListTab.SelectedIndex != index)
+                return;
+            ReloadCurrentFile(playList);
+        }
+
         private void PlayList_DoubleClicked(object? sender, TreeNodeMouseClickEventArgs e)
         {
             int currentIndex = PlayListTab.SelectedIndex;
@@ -821,6 +851,7 @@ namespace MyAudioPlayer
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            SaveSessionState();
             timer.Stop();
             timer.Elapsed -= this.OnPlayTimerTick;//防止关闭窗口后timer还触发事件导致异常
             noTriggerPlayStoppedEvent = true;
@@ -832,6 +863,21 @@ namespace MyAudioPlayer
             }
             CurrentPlayer.Shutdown();
             base.OnFormClosing(e);
+        }
+
+        private void SaveSessionState()
+        {
+            int index = PlayListTab.SelectedIndex;
+            if (index < 0 || index >= playLists.Count)
+                return;
+
+            var playList = playLists[index];
+            new SessionState
+            {
+                PlayListType = playList.GetType().Name,
+                PlayListPath = playList.SessionPath,
+                CurrentItemPath = playList.CurrentSessionItemPath ?? ""
+            }.Save();
         }
 
         protected override void OnHandleCreated(EventArgs e)

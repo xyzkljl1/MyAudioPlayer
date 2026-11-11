@@ -55,7 +55,11 @@ namespace MyAudioPlayer.PlayList
         private PlayerTheme currentTheme = PlayerThemes.Resolve(PlayerThemes.DefaultId);
         private readonly SemaphoreSlim reloadSemaphore = new SemaphoreSlim(1, 1);
         private int reloadGeneration = 0;
-        public PlayListLocalMusic(string _rootDir, MyFileEditEventHandler _begin, MyFileEditEventHandler _end)
+        public PlayListLocalMusic(
+            string _rootDir,
+            MyFileEditEventHandler _begin,
+            MyFileEditEventHandler _end,
+            string? restoreCurrentPath = null)
         {
             needDelPartButton=false;
             needWebButton=false;
@@ -81,7 +85,7 @@ namespace MyAudioPlayer.PlayList
             contextMenuStripItemRefresh = contextMenuStrip.Items.Add("Refresh");
             contextMenuStrip.ItemClicked += this.ContextMenuClicked;
             MountFileEditEvent(_begin, _end);
-            ReloadFromLocal();
+            ReloadFromLocal(restoreCurrentPath);
         }
 
         public override void ApplyTheme(PlayerTheme theme)
@@ -215,10 +219,11 @@ namespace MyAudioPlayer.PlayList
             }
             treeView.ResumeLayout();
         }
-        private void ReloadFromLocal()
+        private void ReloadFromLocal(string? restoreCurrentPath = null)
         {
             int generation = Interlocked.Increment(ref reloadGeneration);
-            string? currentFilePath = (currentNode?.Tag as Node)?.fileInfo.FullName;
+            string? currentFilePath = restoreCurrentPath
+                ?? (currentNode?.Tag as Node)?.fileInfo.FullName;
 
             Task.Run(() =>
             {
@@ -297,9 +302,15 @@ namespace MyAudioPlayer.PlayList
                 return;
             foreach (TreeNode node in treeView.Nodes)
             {
-                if ((node.Tag as Node)?.fileInfo.FullName == currentFilePath)
+                if (string.Equals(
+                    (node.Tag as Node)?.fileInfo.FullName,
+                    currentFilePath,
+                    StringComparison.OrdinalIgnoreCase))
                 {
                     currentNode = node;
+                    treeView.SelectedNode = node;
+                    node.EnsureVisible();
+                    RaiseSessionItemRestored();
                     break;
                 }
             }
@@ -464,6 +475,12 @@ namespace MyAudioPlayer.PlayList
             treeView.SelectedNode = currentNode;
             treeView.SelectedNode.EnsureVisible();
             treeView.Focus();//treeView如果不处于focus状态，选中的条目不会高亮看不见
+        }
+
+        public override string SessionPath { get { return rootDir.FullName; } }
+        public override string? CurrentSessionItemPath
+        {
+            get { return (currentNode?.Tag as Node)?.fileInfo.FullName; }
         }
     }
 }

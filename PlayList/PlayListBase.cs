@@ -52,7 +52,14 @@ namespace MyAudioPlayer.PlayList
         public virtual void DeleteCurrent() { }
         public virtual void FavCurrent() { }
         public virtual void SelectCurrent() { }
+        public virtual string SessionPath { get { return ""; } }
+        public virtual string? CurrentSessionItemPath { get { return null; } }
         public virtual void ApplyTheme(PlayerTheme theme) { }
+        public event EventHandler? SessionItemRestored;
+        protected void RaiseSessionItemRestored()
+        {
+            SessionItemRestored?.Invoke(this, EventArgs.Empty);
+        }
         //编辑文件(Fav/Del/DelPart操作)开始和结束事件
         //由于某些操作会移动文件，如果当前文件被占用(即正在播放)会导致操作失败，需要在移动文件前通知主窗口
         protected event MyFileEditEventHandler OnFileEditBegin;
