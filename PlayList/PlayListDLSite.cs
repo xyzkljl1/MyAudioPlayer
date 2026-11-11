@@ -1183,7 +1183,12 @@ namespace MyAudioPlayer.PlayList
 
         private bool MatchesSearch(string title)
         {
-            foreach (var alternativeTerms in activeSearchTerms)
+            return MatchesSearch(title, activeSearchTerms);
+        }
+
+        private static bool MatchesSearch(string title, IEnumerable<string[]> searchTerms)
+        {
+            foreach (var alternativeTerms in searchTerms)
                 if (!alternativeTerms.Any(term =>
                     title.Contains(term, StringComparison.OrdinalIgnoreCase)))
                     return false;
@@ -1762,6 +1767,18 @@ namespace MyAudioPlayer.PlayList
                 return;
             if (!EnsureWorkLoaded(currentWorkIndex))
                 return;
+
+            string pendingQuery = searchBox.Text.Trim();
+            if (pendingQuery.Length > 0 &&
+                !MatchesSearch(nodes[currentWorkIndex].title, BuildSearchTerms(pendingQuery)))
+            {
+                searchBox.Clear();
+                searchTimer.Stop();
+                searchQuery = "";
+                activeSearchTerms.Clear();
+                SyncSearchTagSelection();
+            }
+
             var item = GetCurrentTreeItem();
             if (item is null)
                 return;
