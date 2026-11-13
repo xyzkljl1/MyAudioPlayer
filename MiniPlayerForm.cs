@@ -6,8 +6,8 @@ namespace MyAudioPlayer
 {
     internal sealed class MiniPlayerForm : Form
     {
-        private const int ButtonSize = 44;
-        private const int SmallIconSize = 25;
+        private const int ButtonSize = 38;
+        private const int SmallIconSize = 22;
         private const int SnapDistance = 24;
         private const int TopSnapDistance = 96;
 
@@ -36,6 +36,7 @@ namespace MyAudioPlayer
         public event EventHandler? FavoriteClicked;
         public event EventHandler? DeleteClicked;
         public event EventHandler? DeletePartClicked;
+        public event EventHandler? MinimizeRequested;
         public event EventHandler? RestoreRequested;
         public event EventHandler? SeekStarted;
         public event EventHandler? SeekRequested;
@@ -50,14 +51,14 @@ namespace MyAudioPlayer
                 | ControlStyles.ResizeRedraw
                 | ControlStyles.UserPaint, true);
             AutoScaleMode = AutoScaleMode.None;
-            ClientSize = new Size(980, 72);
+            ClientSize = new Size(980, 50);
             DoubleBuffered = true;
             FormBorderStyle = FormBorderStyle.None;
             MaximizeBox = false;
             MinimizeBox = false;
             MinimumSize = ClientSize;
             MaximumSize = ClientSize;
-            ShowInTaskbar = true;
+            ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
             Text = "万万静听 - 迷你模式";
             TopMost = true;
@@ -94,7 +95,7 @@ namespace MyAudioPlayer
             favoriteButton.Click += delegate { FavoriteClicked?.Invoke(this, EventArgs.Empty); };
             deleteButton.Click += delegate { DeleteClicked?.Invoke(this, EventArgs.Empty); };
             deletePartButton.Click += delegate { DeletePartClicked?.Invoke(this, EventArgs.Empty); };
-            minimizeButton.Click += delegate { WindowState = FormWindowState.Minimized; };
+            minimizeButton.Click += delegate { MinimizeRequested?.Invoke(this, EventArgs.Empty); };
             playSlider.MouseDown += delegate { SeekStarted?.Invoke(this, EventArgs.Empty); };
             playSlider.MouseUp += delegate { SeekEnded?.Invoke(this, EventArgs.Empty); };
             playSlider.Scroll += delegate { SeekRequested?.Invoke(this, EventArgs.Empty); };
@@ -115,6 +116,19 @@ namespace MyAudioPlayer
         public int SeekPositionSec
         {
             get { return playSlider.Value; }
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                const int WsExToolWindow = 0x00000080;
+                const int WsExAppWindow = 0x00040000;
+                var parameters = base.CreateParams;
+                parameters.ExStyle |= WsExToolWindow;
+                parameters.ExStyle &= ~WsExAppWindow;
+                return parameters;
+            }
         }
 
         public void AllowClose()
@@ -193,17 +207,17 @@ namespace MyAudioPlayer
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
             var bounds = new RectangleF(1.5F, 1.5F, Width - 3F, Height - 3F);
-            using var path = CreateRoundedRectanglePath(bounds, 18F);
+            using var path = CreateRoundedRectanglePath(bounds, 14F);
             using var backBrush = new SolidBrush(theme.WindowBackColor);
             using var leftBrush = new SolidBrush(theme.SubtleSurfaceColor);
             e.Graphics.FillPath(backBrush, path);
 
-            var leftBounds = new RectangleF(1.5F, 1.5F, 166F, Height - 3F);
-            using var leftPath = CreateRoundedRectanglePath(leftBounds, 18F);
+            var leftBounds = new RectangleF(1.5F, 1.5F, 136F, Height - 3F);
+            using var leftPath = CreateRoundedRectanglePath(leftBounds, 14F);
             e.Graphics.FillPath(leftBrush, leftPath);
 
             using var separatorPen = new Pen(Color.FromArgb(90, theme.BorderColor), 1.5F);
-            e.Graphics.DrawLine(separatorPen, 166F, 12F, 166F, Height - 12F);
+            e.Graphics.DrawLine(separatorPen, 136F, 8F, 136F, Height - 8F);
 
             using var borderPen = new Pen(theme.BorderColor, 2.5F);
             e.Graphics.DrawPath(borderPen, path);
@@ -262,22 +276,24 @@ namespace MyAudioPlayer
 
         private void LayoutControls()
         {
-            int top = 14;
-            playButton.Bounds = new Rectangle(12, top, ButtonSize, ButtonSize);
-            previousButton.Bounds = new Rectangle(62, top, ButtonSize, ButtonSize);
-            nextButton.Bounds = new Rectangle(112, top, ButtonSize, ButtonSize);
+            const int edge = 6;
+            const int gap = 4;
+            int top = (Height - ButtonSize) / 2;
+            playButton.Bounds = new Rectangle(edge, top, ButtonSize, ButtonSize);
+            previousButton.Bounds = new Rectangle(playButton.Right + gap, top, ButtonSize, ButtonSize);
+            nextButton.Bounds = new Rectangle(previousButton.Right + gap, top, ButtonSize, ButtonSize);
 
-            int right = Width - 12;
+            int right = Width - edge;
             minimizeButton.Bounds = new Rectangle(right - ButtonSize, top, ButtonSize, ButtonSize);
-            deletePartButton.Bounds = new Rectangle(minimizeButton.Left - ButtonSize - 6, top, ButtonSize, ButtonSize);
-            deleteButton.Bounds = new Rectangle(deletePartButton.Left - ButtonSize - 6, top, ButtonSize, ButtonSize);
-            favoriteButton.Bounds = new Rectangle(deleteButton.Left - ButtonSize - 6, top, ButtonSize, ButtonSize);
-            timeLabel.Bounds = new Rectangle(favoriteButton.Left - 98, top + 1, 88, 42);
+            deletePartButton.Bounds = new Rectangle(minimizeButton.Left - ButtonSize - gap, top, ButtonSize, ButtonSize);
+            deleteButton.Bounds = new Rectangle(deletePartButton.Left - ButtonSize - gap, top, ButtonSize, ButtonSize);
+            favoriteButton.Bounds = new Rectangle(deleteButton.Left - ButtonSize - gap, top, ButtonSize, ButtonSize);
+            timeLabel.Bounds = new Rectangle(favoriteButton.Left - 88, top + 1, 82, ButtonSize - 2);
 
-            int contentLeft = 182;
-            int contentRight = timeLabel.Left - 16;
-            titleLabel.Bounds = new Rectangle(contentLeft, 6, Math.Max(120, contentRight - contentLeft), 24);
-            playSlider.Bounds = new Rectangle(contentLeft - 18, 32, Math.Max(120, contentRight - contentLeft + 18), 34);
+            int contentLeft = 144;
+            int contentRight = timeLabel.Left - 8;
+            titleLabel.Bounds = new Rectangle(contentLeft, 1, Math.Max(120, contentRight - contentLeft), 22);
+            playSlider.Bounds = new Rectangle(contentLeft - 10, 23, Math.Max(120, contentRight - contentLeft + 10), 26);
         }
 
         private void UpdateButtonIcons()
@@ -414,7 +430,7 @@ namespace MyAudioPlayer
             if (Width <= 0 || Height <= 0)
                 return;
 
-            using var path = CreateRoundedRectanglePath(new RectangleF(0, 0, Width, Height), 18F);
+            using var path = CreateRoundedRectanglePath(new RectangleF(0, 0, Width, Height), 14F);
             var oldRegion = Region;
             Region = new Region(path);
             oldRegion?.Dispose();

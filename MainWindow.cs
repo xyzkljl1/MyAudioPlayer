@@ -291,6 +291,7 @@ namespace MyAudioPlayer
             player.FavoriteClicked += OnFavButtonClicked;
             player.DeleteClicked += OnDelButtonClicked;
             player.DeletePartClicked += OnDelPartButtonClicked;
+            player.MinimizeRequested += MinimizeFromMiniMode;
             player.RestoreRequested += delegate { RestoreFromMiniMode(); };
             player.SeekStarted += delegate { timer.Enabled = false; };
             player.SeekEnded += delegate { timer.Enabled = true; };
@@ -334,6 +335,12 @@ namespace MyAudioPlayer
             if (normalWindowStateBeforeMini != FormWindowState.Minimized)
                 WindowState = normalWindowStateBeforeMini;
             Activate();
+        }
+
+        private void MinimizeFromMiniMode(object? sender, EventArgs e)
+        {
+            RestoreFromMiniMode();
+            WindowState = FormWindowState.Minimized;
         }
 
         private void SyncMiniPlayer()
