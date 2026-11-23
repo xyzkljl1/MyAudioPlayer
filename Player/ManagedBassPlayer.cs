@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
@@ -12,18 +13,37 @@ namespace MyAudioPlayer.Player
 {
     internal class ManagedBassPlayer : BasePlayer
     {
+        const string OpusPluginFileName = "bassopus.dll";
+        const string WebmPluginFileName = "basswebm.dll";
         static int InvalidChannel = 0;
+        readonly int opusPlugin;
+        readonly int webmPlugin;
+        readonly Errors opusPluginError;
+        readonly Errors webmPluginError;
+
         public ManagedBassPlayer()
         {
             //Bass.Init(Flags: DeviceInitFlags.Device3D);
             //Bass.Set3DFactors(1, 1, 1);
             Bass.Init();
+            opusPlugin = LoadPlugin(OpusPluginFileName, out opusPluginError);
+            webmPlugin = LoadPlugin(WebmPluginFileName, out webmPluginError);
             BassAac.PlayAudioFromMp4 = true;
             BassAac.AacSupportMp4 = true;
+        }
+
+        static int LoadPlugin(string filename, out Errors error)
+        {
+            string assemblyDirectory = Path.GetDirectoryName(typeof(ManagedBassPlayer).Assembly.Location)
+                ?? AppContext.BaseDirectory;
+            int handle = Bass.PluginLoad(Path.Combine(assemblyDirectory, filename));
+            error = handle == 0 ? Bass.LastError : Errors.OK;
+            return handle;
         }
         //理论上所有操作都会在channel非法时抛出异常,暂不处理        
         int channel = 0;
         byte[] buffer = Array.Empty<byte>();
+        GCHandle bufferHandle;
         float volume = 1.0f;
         public override void Play()
         {
@@ -62,12 +82,23 @@ namespace MyAudioPlayer.Player
                 channel = InvalidChannel;
             }
             CurrentFile = null;
-            buffer = Array.Empty<byte>();
+            ReleaseBuffer();
         }
         public override void Shutdown()
         {
             Stop();
+            if (webmPlugin != 0)
+                Bass.PluginFree(webmPlugin);
+            if (opusPlugin != 0)
+                Bass.PluginFree(opusPlugin);
             Bass.Free();
+        }
+
+        void ReleaseBuffer()
+        {
+            if (bufferHandle.IsAllocated)
+                bufferHandle.Free();
+            buffer = Array.Empty<byte>();
         }
         public override void SetCurrentPositionSec(int seconds)
         {
@@ -78,7 +109,7 @@ namespace MyAudioPlayer.Player
         {
             CallPlayStoppedHandler();
         }
-        unsafe public override void Reload(FileInfo file) 
+        public override void Reload(FileInfo file)
         {
             Stop();
             CurrentFile= file;
@@ -93,34 +124,66 @@ namespace MyAudioPlayer.Player
             if (!File.Exists(filename))
                 throw new Exception($"File not exist:{filename}");
             buffer = File.ReadAllBytes(filename);//读入内存以防止锁文件
-            channel = CreateDecodeStream(filename, buffer);
+            bufferHandle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            int sourceChannel;
+            try
+            {
+                sourceChannel = CreateDecodeStream(filename, bufferHandle.AddrOfPinnedObject(), buffer.Length);
+            }
+            catch
+            {
+                CurrentFile = null;
+                ReleaseBuffer();
+                throw;
+            }
+            if (sourceChannel == InvalidChannel)
+            {
+                var error = Bass.LastError;
+                CurrentFile = null;
+                ReleaseBuffer();
+                throw new Exception(GetDecodeError(filename, error));
+            }
 
-            channel = BassFx.TempoCreate(channel, BassFlags.FxFreeSource);
+            channel = BassFx.TempoCreate(sourceChannel, BassFlags.FxFreeSource);
 
             if (channel == InvalidChannel)
             {
+                var error = Bass.LastError;
+                Bass.StreamFree(sourceChannel);
                 CurrentFile= null;
-                // not a WAV/MP3 or MOD
-                throw new Exception($"ManagedBass Can't Load:{filename}/Err:{ManagedBass.Bass.LastError}");
+                ReleaseBuffer();
+                throw new Exception($"ManagedBass Can't Create Tempo Stream:{filename}/Err:{error}");
             }
             var result = Bass.ChannelSetSync(channel, SyncFlags.End, 0, OnStop);
             if (result==0)
-                throw new Exception($"ManagedBass Can't Set Stop Event:{filename}/Err:{ManagedBass.Bass.LastError}");
+            {
+                var error = Bass.LastError;
+                Stop();
+                throw new Exception($"ManagedBass Can't Set Stop Event:{filename}/Err:{error}");
+            }
             ApplyVolumeToChannel();
         }
 
-        unsafe private static int CreateDecodeStream(string filename, byte[] fileBuffer)
+        string GetDecodeError(string filename, Errors error)
+        {
+            if (Path.GetExtension(filename).Equals(".webm", StringComparison.OrdinalIgnoreCase))
+            {
+                if (webmPlugin == 0)
+                    return $"WebM plugin unavailable ({WebmPluginFileName}):{webmPluginError}";
+                if (opusPlugin == 0)
+                    return $"WebM audio codec plugin unavailable ({OpusPluginFileName}):{opusPluginError}/DecodeErr:{error}";
+            }
+            return $"ManagedBass Can't Decode:{filename}/Err:{error}";
+        }
+
+        private static int CreateDecodeStream(string filename, IntPtr fileData, int fileLength)
         {
             var ext = Path.GetExtension(filename).ToLowerInvariant();
-            fixed (byte* p = fileBuffer)
-            {
-                var data = (IntPtr)p;
-                if (ext == ".mp4" || ext == ".m4a")
-                    return BassAac.CreateMp4Stream(data, 0, fileBuffer.Length, BassFlags.Decode);
-                if (ext == ".aac")
-                    return BassAac.CreateStream(data, 0, fileBuffer.Length, BassFlags.Decode);
-                return Bass.CreateStream(data, 0, fileBuffer.Length, BassFlags.Decode);
-            }
+            if (ext == ".mp4" || ext == ".m4a")
+                return BassAac.CreateMp4Stream(fileData, 0, fileLength, BassFlags.Decode);
+            if (ext == ".aac")
+                return BassAac.CreateStream(fileData, 0, fileLength, BassFlags.Decode);
+            return Bass.CreateStream(fileData, 0, fileLength, BassFlags.Decode);
         }
 
         public override void SetVolume(float volume)

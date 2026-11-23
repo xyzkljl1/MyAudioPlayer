@@ -71,7 +71,7 @@
   </ItemGroup>
 
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="echo D|xcopy &quot;$(SolutionDir)dependency\x64\bass.dll&quot; &quot;$(TargetDir)&quot; /y /C&#xD;&#xA;echo D|xcopy &quot;$(SolutionDir)dependency\x64\bass_fx.dll&quot; &quot;$(TargetDir)&quot; /y /C&#xD;&#xA;echo D|xcopy &quot;$(SolutionDir)dependency\x64\bass_aac.dll&quot; &quot;$(TargetDir)&quot; /y /C&#xD;&#xA;" />
+    <Exec Command="echo D|xcopy &quot;$(SolutionDir)dependency\x64\bass.dll&quot; &quot;$(TargetDir)&quot; /y /C&#xD;&#xA;echo D|xcopy &quot;$(SolutionDir)dependency\x64\bass_fx.dll&quot; &quot;$(TargetDir)&quot; /y /C&#xD;&#xA;echo D|xcopy &quot;$(SolutionDir)dependency\x64\bass_aac.dll&quot; &quot;$(TargetDir)&quot; /y /C&#xD;&#xA;echo D|xcopy &quot;$(SolutionDir)dependency\x64\bassopus.dll&quot; &quot;$(TargetDir)&quot; /y /C&#xD;&#xA;echo D|xcopy &quot;$(SolutionDir)dependency\x64\basswebm.dll&quot; &quot;$(TargetDir)&quot; /y /C&#xD;&#xA;" />
   </Target>
 
 </Project>
