@@ -180,7 +180,11 @@ namespace MyAudioPlayer.Player
         {
             var ext = Path.GetExtension(filename).ToLowerInvariant();
             if (ext == ".mp4" || ext == ".m4a")
-                return BassAac.CreateMp4Stream(fileData, 0, fileLength, BassFlags.Decode);
+            {
+                int stream = BassAac.CreateMp4Stream(fileData, 0, fileLength, BassFlags.Decode);
+                if (stream != InvalidChannel)
+                    return stream;
+            }
             if (ext == ".aac")
                 return BassAac.CreateStream(fileData, 0, fileLength, BassFlags.Decode);
             return Bass.CreateStream(fileData, 0, fileLength, BassFlags.Decode);
