@@ -11,7 +11,17 @@ namespace MyAudioPlayer
             // To customize application configuration such as set high DPI settings or default font,
             // see https://aka.ms/applicationconfiguration.
             ApplicationConfiguration.Initialize();
-            Application.Run(new MainWindow());
+            var mainWindow = new MainWindow();
+            var keyboardFilter = new PlayerKeyboardFilter(mainWindow);
+            Application.AddMessageFilter(keyboardFilter);
+            try
+            {
+                Application.Run(mainWindow);
+            }
+            finally
+            {
+                Application.RemoveMessageFilter(keyboardFilter);
+            }
         }
     }
 }

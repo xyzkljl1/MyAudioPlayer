@@ -48,7 +48,7 @@ namespace MyAudioPlayer.PlayList
         private DirectoryInfo rootDir;
         private DirectoryInfo favDir;
         private List<Node> nodes = new List<Node>();
-        ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
+        ContextMenuStrip contextMenuStrip = PlayerKeyboardFilter.TrackPopup(new ContextMenuStrip());
         private ToolStripItem contextMenuStripItemFav;
         private ToolStripItem contextMenuStripItemDel;
         private ToolStripItem contextMenuStripItemRefresh;

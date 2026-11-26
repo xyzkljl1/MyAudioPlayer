@@ -20,7 +20,7 @@ namespace MyAudioPlayer
         private BasePlayer CurrentPlayer=new ManagedBassPlayer();
         private const int NormalIconSize = 46;
         private PlayerTheme currentTheme = PlayerThemes.Resolve(PlayerThemes.DefaultId);
-        private readonly ContextMenuStrip themeMenuStrip = new ContextMenuStrip();
+        private readonly ContextMenuStrip themeMenuStrip = PlayerKeyboardFilter.TrackPopup(new ContextMenuStrip());
         private readonly Dictionary<Button, ButtonVisualStyle> buttonStyles = new Dictionary<Button, ButtonVisualStyle>();
         private readonly HashSet<Button> styledButtons = new HashSet<Button>();
         private MiniPlayerForm? miniPlayer;

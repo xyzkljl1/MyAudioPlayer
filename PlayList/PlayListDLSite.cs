@@ -183,9 +183,9 @@ namespace MyAudioPlayer.PlayList
 
         private readonly TableLayoutPanel mainControl = new TableLayoutPanel();
         private readonly TableLayoutPanel searchPanel = new TableLayoutPanel();
-        private readonly TextBox searchBox = new TextBox();
+        private readonly TextBox searchBox = new PlaylistSearchBox();
         private readonly Button searchTagButton = new Button();
-        private readonly ToolStripDropDown searchTagDropDown = new ToolStripDropDown();
+        private readonly ToolStripDropDown searchTagDropDown = PlayerKeyboardFilter.TrackPopup(new ToolStripDropDown());
         private readonly ToolTip searchTagToolTip = new ToolTip();
         private readonly System.Windows.Forms.Timer searchTimer = new System.Windows.Forms.Timer { Interval = 200 };
         private static readonly Lazy<IReadOnlyList<SearchTagGroup>> ConfiguredSearchTagGroups =
@@ -209,7 +209,7 @@ namespace MyAudioPlayer.PlayList
         private List<WorkTreeItem> visibleItems = new List<WorkTreeItem>();
         private Dictionary<Node, WorkTreeItem> workItems = new Dictionary<Node, WorkTreeItem>();
         private HttpClient httpClient;
-        private ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
+        private ContextMenuStrip contextMenuStrip = PlayerKeyboardFilter.TrackPopup(new ContextMenuStrip());
         private ToolStripItem contextMenuStripItemFav;
         private ToolStripItem contextMenuStripItemDelPart;
         private ToolStripItem contextMenuStripItemDel;
