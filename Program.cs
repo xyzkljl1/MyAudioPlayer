@@ -12,7 +12,7 @@ namespace MyAudioPlayer
             // see https://aka.ms/applicationconfiguration.
             ApplicationConfiguration.Initialize();
             var mainWindow = new MainWindow();
-            var keyboardFilter = new PlayerKeyboardFilter(mainWindow);
+            var keyboardFilter = new PlayerKeyboardFilter(mainWindow, mainWindow.TogglePlayback, mainWindow.AdjustVolume);
             Application.AddMessageFilter(keyboardFilter);
             try
             {

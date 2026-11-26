@@ -10,13 +10,19 @@ namespace MyAudioPlayer
         private const int WmSysChar = 0x0106;
         private const int WmSysDeadChar = 0x0107;
         private const int WmUniChar = 0x0109;
+        private const int PreviousKeyStateMask = 0x40000000;
+        private const int VolumeStep = 5;
 
         private static ToolStripDropDown? activePopup;
         private readonly Form mainWindow;
+        private readonly Action togglePlayback;
+        private readonly Action<int> adjustVolume;
 
-        public PlayerKeyboardFilter(Form mainWindow)
+        public PlayerKeyboardFilter(Form mainWindow, Action togglePlayback, Action<int> adjustVolume)
         {
             this.mainWindow = mainWindow;
+            this.togglePlayback = togglePlayback;
+            this.adjustVolume = adjustVolume;
         }
 
         public static T TrackPopup<T>(T popup) where T : ToolStripDropDown
@@ -60,6 +66,23 @@ namespace MyAudioPlayer
                     || (key is Keys.PageUp or Keys.PageDown
                         && message.Msg is WmKeyDown or WmKeyUp
                         && (Control.ModifierKeys & Keys.Control) != Keys.None);
+            }
+
+            if (message.Msg == WmKeyDown && form != null && form == Form.ActiveForm
+                && Control.ModifierKeys == Keys.None)
+            {
+                switch (key)
+                {
+                    case Keys.Space when (message.LParam.ToInt64() & PreviousKeyStateMask) == 0:
+                        togglePlayback();
+                        break;
+                    case Keys.Up:
+                        adjustVolume(VolumeStep);
+                        break;
+                    case Keys.Down:
+                        adjustVolume(-VolumeStep);
+                        break;
+                }
             }
 
             return true;

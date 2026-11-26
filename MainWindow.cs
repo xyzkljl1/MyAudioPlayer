@@ -128,6 +128,12 @@ namespace MyAudioPlayer
             ApplyEffectiveVolume();
         }
 
+        internal void AdjustVolume(int delta)
+        {
+            volumeSlider.Value += delta;
+            ApplyEffectiveVolume();
+        }
+
         private void ApplyEffectiveVolume()
         {
             var userVolume = Math.Clamp(volumeSlider.Value / 100.0f, 0.0f, 1.0f);
@@ -146,6 +152,11 @@ namespace MyAudioPlayer
             SyncMiniPlayer();
         }
         void OnPlayButtonClicked(object? sender, EventArgs e)
+        {
+            TogglePlayback();
+        }
+
+        internal void TogglePlayback()
         {
             if (!CurrentPlayer.IsLoaded())
                 return;
